@@ -13,7 +13,7 @@ namespace LingerieButtonsFilter
         private static List<Transform> originalItemsBackup = null;
         private static bool isProcessingAutoUnequip = false;
 
-        // ИСПРАВЛЕНО ТОЧЕЧНО: теперь храним живые ссылки на компоненты из сундука!
+        // Живые ссылки на компоненты Item для реставрации по всей игре
         public static Item lastActiveGlovesItem = null;
         public static Item lastActiveMaskItem = null;
 
@@ -32,7 +32,7 @@ namespace LingerieButtonsFilter
         }
 
         // ====================================================================
-        // PREFIX: ДВУХЭТАПНЫЙ ФИЛЬТРАТОР И РАНТАЙМ-СНИМОК СЦЕНЫ
+        // PREFIX ЦИТАДЕЛИ ИНТЕРФЕЙСА: СНИМОК СЦЕНЫ И ФИЛЬТРАЦИЯ UI
         // ====================================================================
         [HarmonyPrefix]
         public static void Prefix(object __instance)
@@ -55,7 +55,7 @@ namespace LingerieButtonsFilter
                     originalItemsBackup = new List<Transform>(gameItemsList);
                     List<Transform> filteredItems = new List<Transform>();
 
-                    // 1. АВТО-ЗАГРУЗКА БЛОКНОТА НА ЛЕТУ
+                    // ЗАГРУЗКА БЛОКНОТА
                     Dictionary<string, int> localMappingTable = new Dictionary<string, int>();
                     try
                     {
@@ -81,7 +81,7 @@ namespace LingerieButtonsFilter
                     }
                     catch { }
 
-                    // 2. РАНТАЙМ-СНИМОК И ТОТАЛЬНЫЙ ДЕБАГ КОСТЕЙ
+                    // РАНТАЙМ-СНИМОК СЦЕНЫ
                     CharacterCustomization cc = GameObject.FindObjectOfType<CharacterCustomization>();
                     Dictionary<int, string> virtualSlotsMap = new Dictionary<int, string>();
                     Item itemToClickTakeOff = null;
@@ -91,32 +91,14 @@ namespace LingerieButtonsFilter
                         bool maskPresent = false;
                         bool glovesPresent = false;
 
-                        Debug.Log("====================================================================");
-                        Debug.Log("[SWPT ДЕБАГ]: Цитадель GenerateIcons активна! Начинаем сканирование...");
-
                         foreach (Transform child in cc.GetComponentsInChildren<Transform>(true))
                         {
                             if (child == null || !child.gameObject.activeSelf) continue;
                             string cleanName = child.name.ToLower().Replace("(clone)", "").Trim();
 
-                            // ШПИОН: Ищем только маски и перчатки на теле персонажа
-                            if (cleanName.Contains("gloves") || cleanName.Contains("blindfold") || cleanName.Contains("gag") || cleanName.Contains("mask"))
-                            {
-                                Debug.Log($" -> [РАДАР ЗАСЁК ОБЪЕКТ]: Имя='{child.name}' | Кость='{child.parent?.name ?? "Корень"}'");
-                            }
+                            if (cleanName.Contains("gloves") && !cleanName.Contains("blindfold") && !cleanName.Contains("gag")) glovesPresent = true;
+                            if (cleanName.Contains("blindfold") || cleanName.Contains("gag") || cleanName.Contains("mask") || cleanName.Contains("collar")) maskPresent = true;
 
-                            if (cleanName.Contains("gloves") && !cleanName.Contains("blindfold") && !cleanName.Contains("gag"))
-                            {
-                                // ТЕКСТОВОЕ ИМЯ БОЛЬШЕ НЕ ПИШЕМ СЮДА — ПРОСТО СТАВИМ ФЛАГ ОБНАРУЖЕНИЯ!
-                                glovesPresent = true;
-                            }
-                            if (cleanName.Contains("blindfold") || cleanName.Contains("gag") || cleanName.Contains("mask"))
-                            {
-                                // ТЕКСТОВОЕ ИМЯ БОЛЬШЕ НЕ ПИШЕМ СЮДА — ПРОСТО СТАВИМ ФЛАГ ОБНАРУЖЕНИЯ!
-                                maskPresent = true;
-                            }
-
-                            // Логика вытеснения пирсингов
                             int matchedCategory = -1;
                             foreach (var pair in localMappingTable)
                             {
@@ -142,12 +124,9 @@ namespace LingerieButtonsFilter
                                 }
                                 else virtualSlotsMap.Add(matchedCategory, child.name);
                             }
-                        } // <--- ЗДЕСЬ ОФИЦИАЛЬНО ЗАВЕРШИЛСЯ ЦИКЛ FOREACH ПО КОСТЯМ КУКЛЫ
+                        }
 
-                        // ====================================================================
-                        // НАШ НОВЫЙ БРОНЕБОЙНЫЙ БЛОК: СНИМОК НА ОСНОВЕ НАЛИЧИЯ МЕШЕЙ НА СЦЕНЕ!
-                        // Полностью игнорируем капризный метод IsWearing игры!
-                        // ====================================================================
+                        // ОБНОВЛЯЕМ ЖИВЫЕ ССЫЛКИ НА ПРЕДМЕТЫ ПРИ ЛЮБОМ СЛУЧАЕ
                         foreach (Transform t in originalItemsBackup)
                         {
                             if (t == null) continue;
@@ -156,67 +135,37 @@ namespace LingerieButtonsFilter
 
                             string sName = t.name.ToLower().Replace("(clone)", "").Trim();
 
-                            // Если наш радар засёк перчатки на кукле, и имя префаба из сундука совпадает — запоминаем этот Item!
-                            if (glovesPresent && sName.Contains("gloves") && !sName.Contains("blindfold") && !sName.Contains("gag"))
-                            {
-                                lastActiveGlovesItem = itemComponent;
-                            }
-                            // Если радар засёк маску на кукле, и имя префаба из сундука совпадает — запоминаем этот Item!
-                            if (maskPresent && (sName.Contains("blindfold") || sName.Contains("gag") || sName.Contains("mask") || sName.Contains("collar")))
-                            {
-                                lastActiveMaskItem = itemComponent;
-                            }
+                            if (glovesPresent && sName.Contains("gloves") && !sName.Contains("blindfold") && !sName.Contains("gag")) lastActiveGlovesItem = itemComponent;
+                            if (maskPresent && (sName.Contains("blindfold") || sName.Contains("gag") || sName.Contains("mask") || sName.Contains("collar"))) lastActiveMaskItem = itemComponent;
                         }
 
-                        // Вычисляем имена для красивого лога из живых ссылок компонентов Item
-                        string currentMaskLogName = (lastActiveMaskItem != null) ? lastActiveMaskItem.gameObject.name : "Нет";
-                        string currentGlovesLogName = (lastActiveGlovesItem != null) ? lastActiveGlovesItem.gameObject.name : "Нет";
-
-                        // НАШ ОБНОВЛЕННЫЙ СЛЕПОК КАДРА (СОХРАНЯЕТ ВСЕ ЛОГИ И НЕ ПАДАЕТ!)
-                        Debug.Log($"[SWPT ДЕБАГ]: СЛЕПОК КАДРА -> Маска={maskPresent} (Имя: '{currentMaskLogName}') | Перчатки={glovesPresent} (Имя: '{currentGlovesLogName}')");
-
-                        // ----------------====================================================
-                        // ОНЛАЙН-РЕСТАВРАТОР НА ОСНОВЕ ЖИВЫХ ССЫЛОК И С ОХРАНОЙ ВСЕХ ЛОГОВ!
-                        // ----------------====================================================
-                        // Ситуация А: Маска горит, но игра стёрла перчатки.
+                        // ОНЛАЙН-РЕСТАВРАТОР ВНУТРИ ИНТЕРФЕЙСА
                         if (maskPresent && !glovesPresent && lastActiveGlovesItem != null)
                         {
-                            Debug.Log($"[SWPT ДЕБАГ]: Замятие! Маска есть, перчатки стёрты. Насильно возвращаем '{lastActiveGlovesItem.gameObject.name}' на резервный маркер костей!");
                             Transform restored = Utility.Instantiate(lastActiveGlovesItem.transform);
                             cc.AddItem(restored, "misc1");
-
-                            // ЖЕЛЕЗНЫЙ ПРЕДОХРАНИТЕЛЬ: Фиксируем, что перчатки реставрированы, гася бесконечный цикл!
                             glovesPresent = true;
                         }
-
-                        // Ситуация Б: Перчатки горят, но игра стёрла маску.
                         if (glovesPresent && !maskPresent && lastActiveMaskItem != null)
                         {
-                            Debug.Log($"[SWPT ДЕБАГ]: Замятие! Перчатки есть, маска стёрта. Насильно возвращаем '{lastActiveMaskItem.gameObject.name}' на резервный маркер костей!");
                             Transform restored = Utility.Instantiate(lastActiveMaskItem.transform);
                             cc.AddItem(restored, "misc2");
-
-                            // ЖЕЛЕЗНЫЙ ПРЕДОХРАНИТЕЛЬ: Фиксируем, что маска реставрирована, гася бесконечный цикл!
                             maskPresent = true;
                         }
 
-                        // Вызываем автоснятие старого пирсинга (ОСТАЕТСЯ АБСОЛЮТНО БЕЗ ИЗМЕНЕНИЙ!)
                         if (itemToClickTakeOff != null)
                         {
                             try
                             {
-                                Debug.Log($"[SWPT ДЕБАГ]: Авто-вытеснение пирсинга! Кликаем по '{itemToClickTakeOff.gameObject.name}'");
                                 isProcessingAutoUnequip = true;
                                 itemToClickTakeOff.Use(cc);
                                 isProcessingAutoUnequip = false;
                             }
                             catch { isProcessingAutoUnequip = false; }
                         }
+                    }
 
-                        Debug.Log("====================================================================");
-                    } // <--- ЗАКРЫВАЕТСЯ ИФ КУКЛЫ И ВЕСЬ БЛОК ДЕБАГА
-
-                    // 3. ДВУХЭТАПНАЯ UI-ФИЛЬТРАЦИЯ
+                    // ДВУХЭТАПНАЯ ФИЛЬТРАЦИЯ UI
                     foreach (Transform itemTransform in originalItemsBackup)
                     {
                         if (itemTransform == null) continue;
@@ -279,6 +228,75 @@ namespace LingerieButtonsFilter
             {
                 List<Transform> gameItemsList = Global.code.playerLingerieStorage.items.items;
                 gameItemsList.Clear(); gameItemsList.AddRange(originalItemsBackup); originalItemsBackup = null;
+            }
+        }
+    }
+
+    // ====================================================================
+    // ГЛОБАЛЬНЫЙ ГАРДЕРОБНЫЙ ЦЕМЕНТ: ГАРАНТИРУЕТ СОВМЕСТИМОСТЬ В МИРЕ И ВЕЗДЕ
+    // Насильно удерживает вторую вещь и рапортует о состоянии крючков misc1/misc2!
+    // ====================================================================
+    [HarmonyPatch(typeof(UIInventory), "RefreshEquipment")]
+    public class UIInventory_GlobalCement_Patch
+    {
+        [HarmonyPostfix]
+        public static void Postfix()
+        {
+            try
+            {
+                CharacterCustomization cc = GameObject.FindObjectOfType<CharacterCustomization>();
+                if (cc == null) return;
+
+                bool maskPresent = false;
+                bool glovesPresent = false;
+
+                string misc1ItemName = "[Пусто]";
+                string misc2ItemName = "[Пусто]";
+
+                // Быстро сканируем скелет куклы после оригинальной очистки игры
+                foreach (Transform child in cc.GetComponentsInChildren<Transform>(true))
+                {
+                    if (child == null || !child.gameObject.activeSelf) continue;
+                    string nLower = child.name.ToLower();
+
+                    if (nLower.Contains("blindfold") || nLower.Contains("gag") || nLower.Contains("mask") || nLower.Contains("collar")) maskPresent = true;
+                    if (nLower.Contains("gloves") && !nLower.Contains("blindfold") && !nLower.Contains("gag")) glovesPresent = true;
+
+                    // ОПЕРАЦИЯ ПРОЗРЕНИЕ: Ловим то, что игра или наш реставратор привязали к крючкам misc!
+                    if (child.parent != null)
+                    {
+                        string parentName = child.parent.name.ToLower();
+                        if (parentName == "misc1") misc1ItemName = child.name;
+                        if (parentName == "misc2") misc2ItemName = child.name;
+                    }
+                }
+
+                // ЦЕМЕНТ СИТУАЦИИ А: Маска горит, но перчатки стёрты — возвращаем их на misc1!
+                if (maskPresent && !glovesPresent && InventoryFilterPatch.lastActiveGlovesItem != null)
+                {
+                    Transform restored = Utility.Instantiate(InventoryFilterPatch.lastActiveGlovesItem.transform);
+                    cc.AddItem(restored, "misc1");
+                    misc1ItemName = InventoryFilterPatch.lastActiveGlovesItem.gameObject.name;
+                }
+
+                // ЦЕМЕНТ СИТУАЦИИ Б: Перчатки горят, но маска стёрта — возвращаем её на misc2!
+                if (glovesPresent && !maskPresent && InventoryFilterPatch.lastActiveMaskItem != null)
+                {
+                    Transform restored = Utility.Instantiate(InventoryFilterPatch.lastActiveMaskItem.transform);
+                    cc.AddItem(restored, "misc2");
+                    misc2ItemName = InventoryFilterPatch.lastActiveMaskItem.gameObject.name;
+                }
+
+                // РАПОРТ ДЛЯ СПОКОЙНОГО СНА СТАРШЕГО ИНЖЕНЕРА 🛡️💤
+                Debug.Log("====================================================================");
+                Debug.Log("[SWPT МЕНЕДЖЕР АНАТОМИИ]: Проверка физических вешалок куклы в мире:");
+                Debug.Log($"   -> Крючок МISC1 (Резерв Перчаток): {misc1ItemName}");
+                Debug.Log($"   -> Крючок МISC2 (Резерв Масок):    {misc2ItemName}");
+                Debug.Log("====================================================================");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[SWPT ЦЕМЕНТ КРИТ]: Ошибка проверки вешалок: {ex.Message}");
             }
         }
     }
