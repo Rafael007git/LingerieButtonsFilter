@@ -142,6 +142,30 @@ namespace LingerieButtonsFilter
                                 }
                                 else virtualSlotsMap.Add(matchedCategory, child.name);
                             }
+                        } // <--- ЗДЕСЬ ОФИЦИАЛЬНО ЗАВЕРШИЛСЯ ЦИКЛ FOREACH ПО КОСТЯМ КУКЛЫ
+
+                        // ====================================================================
+                        // НАШ НОВЫЙ БРОНЕБОЙНЫЙ БЛОК: СНИМОК НА ОСНОВЕ НАЛИЧИЯ МЕШЕЙ НА СЦЕНЕ!
+                        // Полностью игнорируем капризный метод IsWearing игры!
+                        // ====================================================================
+                        foreach (Transform t in originalItemsBackup)
+                        {
+                            if (t == null) continue;
+                            var itemComponent = t.GetComponent<Item>();
+                            if (itemComponent == null) continue;
+
+                            string sName = t.name.ToLower().Replace("(clone)", "").Trim();
+
+                            // Если наш радар засёк перчатки на кукле, и имя префаба из сундука совпадает — запоминаем этот Item!
+                            if (glovesPresent && sName.Contains("gloves") && !sName.Contains("blindfold") && !sName.Contains("gag"))
+                            {
+                                lastActiveGlovesItem = itemComponent;
+                            }
+                            // Если радар засёк маску на кукле, и имя префаба из сундука совпадает — запоминаем этот Item!
+                            if (maskPresent && (sName.Contains("blindfold") || sName.Contains("gag") || sName.Contains("mask") || sName.Contains("collar")))
+                            {
+                                lastActiveMaskItem = itemComponent;
+                            }
                         }
 
                         // Вычисляем имена для красивого лога из живых ссылок компонентов Item
