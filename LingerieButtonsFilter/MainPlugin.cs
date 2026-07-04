@@ -22,17 +22,38 @@ namespace LingerieButtonsFilter
 
         private void Awake()
         {
-            // 1. Инициализируем конфигурацию BepInEx и загружаем ресурсы
+            // Инициализируем конфигурацию и загружаем ресурсы
             ModConfig.Init(Config);
             LoadEmbeddedIcons();
-            LoadItemMappingTable(); // Запускаем чтение нашей текстовой базы данных!
+            LoadItemMappingTable();
 
-            // 2. ПОДПИСКА НА СЦЕНЫ: Здесь живет СТРОГО верстка интерфейса, которая обновляется при загрузках
+            // ДЕБАГ-ШПИОН: Насильно вытаскиваем истинные имена методов ДО запуска патчей Harmony!
+            try
+            {
+                Logger.LogInfo("=== ЗАПУСК СЛОТ-ДЕТЕКТИВА ДЛЯ КУКЛЫ ===");
+                foreach (var method in typeof(CharacterCustomization).GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                {
+                    if (method.Name.ToLower().Contains("wear") || method.Name.ToLower().Contains("equip") || method.Name.ToLower().Contains("lingerie") || method.Name.ToLower().Contains("take"))
+                    {
+                        Logger.LogInfo($"[SWPT КУКЛА МЕТОД]: {method.Name}({string.Join(", ", System.Array.ConvertAll(method.GetParameters(), p => p.ParameterType.Name))})");
+                    }
+                }
+
+                Logger.LogInfo("=== ЗАПУСК СЛОТ-ДЕТЕКТИВА ДЛЯ ИНВЕНТАРЯ ===");
+                foreach (var method in typeof(UIInventory).GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                {
+                    if (method.Name.ToLower().Contains("click") || method.Name.ToLower().Contains("equip") || method.Name.ToLower().Contains("wear") || method.Name.ToLower().Contains("toggle"))
+                    {
+                        Logger.LogInfo($"[SWPT ИНВЕНТАРЬ МЕТОД]: {method.Name}({string.Join(", ", System.Array.ConvertAll(method.GetParameters(), p => p.ParameterType.Name))})");
+                    }
+                }
+            }
+            catch (Exception ex) { Logger.LogError($"Ошибка шпиона методов: {ex.Message}"); }
+
+            // ПОДПИСКА НА СЦЕНЫ
             UnityEngine.SceneManagement.SceneManager.sceneLoaded += (scene, mode) =>
             {
                 IsUiCustomized = false;
-
-                // Находим инвентарь на сцене (даже если он временно деактивирован разработчиками)
                 UIInventory uiInventory = Resources.FindObjectsOfTypeAll<UIInventory>().Length > 0
                     ? Resources.FindObjectsOfTypeAll<UIInventory>()[0]
                     : null;
@@ -42,52 +63,18 @@ namespace LingerieButtonsFilter
                     Transform cat2 = uiInventory.transform.Find("Right/Lingerie Group/Category (2)");
                     if (cat2 != null && cat2.gameObject.GetComponent<InventoryUiController>() == null)
                     {
-                        // Подселяем наш контроллер верстки на панель кнопок
                         cat2.gameObject.AddComponent<InventoryUiController>();
                     }
                 }
             };
 
-            // 3. ЖЕЛЕЗНАЯ СИСТЕМНАЯ АКТИВИЗАЦИЯ ХАРМОНИ (СТРОГО ОДИН РАЗ И ВНЕ ЗАГРУЗКИ СЦЕН)
-            // Этот вызов автоматически найдет и активирует ВСЕ наши патчи в проекте:
-            // и фильтрацию предметов (InventoryFilterPatch), и щит от спама логов (PMC_Setting_GetKeyDown_ShieldPatch)!
+            // ЗАПУСК ХАРМОНИ
             var harmony = new Harmony("com.yourname.swpt.inventoryfilter");
             harmony.PatchAll();
 
-            Logger.LogInfo("Финальный релиз мода гардероба 1.2.0 успешно запущен и защищен!");
-
-            // ДЕБАГ-ШПИОН №1: Печатает карту слотов игры с их реальными ID при старте!
-            try
-            {
-                foreach (var val in System.Enum.GetValues(typeof(SlotType)))
-                {
-                    Logger.LogInfo($"[SWPT КАРТА СЛОТОВ]: {val} = {(int)val}");
-                }
-            }
-            catch (Exception ex) { Logger.LogError($"Ошибка шпиона карты слотов: {ex.Message}"); }
-
-            // ДЕБАГ-ШПИОН: Ищет в коде игры все методы, связанные с надеванием белья
-            try
-            {
-                foreach (var method in typeof(CharacterCustomization).GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
-                {
-                    if (method.Name.ToLower().Contains("wear") || method.Name.ToLower().Contains("equip") || method.Name.ToLower().Contains("lingerie"))
-                    {
-                        Logger.LogInfo($"[SWPT КУКЛА МЕТОД]: {method.Name}({string.Join(", ", System.Array.ConvertAll(method.GetParameters(), p => p.ParameterType.Name))})");
-                    }
-                }
-                foreach (var method in typeof(UIInventory).GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
-                {
-                    if (method.Name.ToLower().Contains("click") || method.Name.ToLower().Contains("equip") || method.Name.ToLower().Contains("wear"))
-                    {
-                        Logger.LogInfo($"[SWPT ИНВЕНТАРЬ МЕТОД]: {method.Name}({string.Join(", ", System.Array.ConvertAll(method.GetParameters(), p => p.ParameterType.Name))})");
-                    }
-                }
-            }
-            catch (Exception ex) { Logger.LogError($"Ошибка шпиона методов: {ex.Message}"); }
-
-
+            Logger.LogInfo("Мод гардероба 1.2.0 успешно инициализирован!");
         }
+
 
         private void LoadEmbeddedIcons()
         {

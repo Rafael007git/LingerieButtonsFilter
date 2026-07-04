@@ -11,6 +11,9 @@ namespace LingerieButtonsFilter
     {
         private static List<Transform> originalItemsBackup = null;
 
+        // Папка для хранения оригинальных типов на время обновления куклы
+        private static Dictionary<Item, SlotType> tempSavedTypes = new Dictionary<Item, SlotType>();
+
         [HarmonyTargetMethod]
         public static MethodBase TargetMethod()
         {
@@ -64,11 +67,7 @@ namespace LingerieButtonsFilter
                             {
                                 if (MainPlugin.ItemMappingTable.TryGetValue(itemNameLower, out int customSlotId))
                                 {
-                                    slotTypeInt = customSlotId;
-
-                                    // Возвращаем легальный тип none (10), чтобы игра не блокировала клики,
-                                    // но запоминаем кастомную категорию для нашего кастомного менеджера конфликтов ниже!
-                                    itemComponent.slotType = SlotType.none;
+                                    slotTypeInt = customSlotId; // Для UI кнопок
                                 }
                                 else if (slotTypeInt < 100)
                                 {
@@ -140,64 +139,68 @@ namespace LingerieButtonsFilter
     }
 
     // ====================================================================
-    // АВТОНОМНЫЙ ПАТЧ АНАТОМИЧЕСКИХ КОНФЛИКТОВ (УПРАВЛЕНИЕ НАДЕВАНИЕМ)
-    // Перехватывает метод куклы персонажа в момент, когда на неё надевают ЛЮБУЮ вещь!
+    // ЖЕЛЕЗНЫЙ ВР-ПАТЧ НАДВИГАНИЯ КОНФЛИКТОВ ЧЕРЕЗ REFRESH EQUIPMENT
+    // Перехватывает системное обновление куклы персонажа, которое точно есть в VR!
     // ====================================================================
-    [HarmonyPatch(typeof(CharacterCustomization), "WearLingerie")] // Метод сидит в коде куклы
-    public class CharacterCustomization_Wear_Patch
+    [HarmonyPatch(typeof(CharacterCustomization), "RefreshEquipment")]
+    public class CharacterCustomization_Refresh_Patch
     {
+        private static Dictionary<Item, SlotType> savedTypes = new Dictionary<Item, SlotType>();
+
         [HarmonyPrefix]
-        public static void Prefix(Transform itemTransform, CharacterCustomization __instance)
+        public static void Prefix()
         {
-            if (itemTransform == null || __instance == null) return;
+            savedTypes.Clear();
+            if (Global.code?.playerLingerieStorage?.items?.items == null) return;
 
-            string newItemName = itemTransform.name.ToLower().Replace("(clone)", "").Trim();
-
-            // 1. Проверяем, записана ли НОВАЯ вещь в нашем Блокноте
-            if (MainPlugin.ItemMappingTable.TryGetValue(newItemName, out int newCustomCategory))
+            // Перед тем как кукла обновит одежду, мы временно подменяем типы вещей по нашему Блокноту,
+            // чтобы игра сама автоматически убрала конфликты пирсингов и освободила перчатки!
+            foreach (Transform t in Global.code.playerLingerieStorage.items.items)
             {
-                // Нам нельзя трогать общую категорию Accessories (100) — пусть платья надеваются свободно
-                if (newCustomCategory == 100) return;
+                if (t == null) continue;
+                var itemComponent = t.GetComponent<Item>();
+                if (itemComponent == null) continue;
 
-                // 2. Бежим шпионить по всему инвентарю надетого белья игрока!
-                if (Global.code?.playerLingerieStorage?.items?.items == null) return;
+                string nameLower = t.name.ToLower().Replace("(clone)", "").Trim();
 
-                Transform itemToTakeOff = null;
-
-                foreach (Transform wornItem in Global.code.playerLingerieStorage.items.items)
+                if (MainPlugin.ItemMappingTable.TryGetValue(nameLower, out int customSlotId))
                 {
-                    if (wornItem == null || wornItem == itemTransform) continue;
-
-                    string wornItemName = wornItem.name.ToLower().Replace("(clone)", "").Trim();
-
-                    // 3. Ищем, надета ли на героиню СТАРАЯ вещь из ТОЙ ЖЕ САМОЙ категории Блокнота?
-                    if (MainPlugin.ItemMappingTable.TryGetValue(wornItemName, out int wornCustomCategory))
+                    if (!savedTypes.ContainsKey(itemComponent))
                     {
-                        if (wornCustomCategory == newCustomCategory)
-                        {
-                            // Нашли! Например, мы надеваем пирсинг 'Barbell' (113), а на ней уже висит 'Heart' (113)
-                            itemToTakeOff = wornItem;
-                            break;
-                        }
+                        savedTypes.Add(itemComponent, itemComponent.slotType);
                     }
-                }
 
-                // 4. Насильно снимаем старую вещь этой же категории перед тем, как игра наденет новую!
-                if (itemToTakeOff != null)
-                {
-                    try
+                    switch (customSlotId)
                     {
-                        // Вызываем встроенный игровой метод принудительного снятия предмета с куклы
-                        __instance.TakeOffLingerie(itemToTakeOff);
-                        Debug.Log($"[SWPT АНАТОМИЯ]: Автоматически снята старая вещь '{itemToTakeOff.name}', освобождая категорию для '{itemTransform.name}'!");
+                        case 101: itemComponent.slotType = SlotType.helmet; break;      // Hats -> Шлем (0)
+                        case 102: itemComponent.slotType = SlotType.none; break;        // Eyes -> none (10)
+                        case 103: itemComponent.slotType = SlotType.gloves; break;      // Mouth -> gloves (9)
+                        case 104: itemComponent.slotType = SlotType.necklace; break;    // Earrings -> necklace (4)
+                        case 111: itemComponent.slotType = SlotType.lingeriegloves; break; // Wrists -> lingeriegloves (16)
+                        case 112: itemComponent.slotType = SlotType.ring; break;        // Neck -> ring (5)
+                        case 113: itemComponent.slotType = SlotType.shoes; break;       // Nipples -> shoes (6)
                     }
-                    catch { }
                 }
             }
         }
+
+        [HarmonyPostfix]
+        public static void Postfix()
+        {
+            // Как только кукла обновилась, мгновенно возвращаем оригинальные типы ассетов,
+            // чтобы инвентарь и склад игры работали в штатном режиме!
+            foreach (var pair in savedTypes)
+            {
+                if (pair.Key != null)
+                {
+                    pair.Key.slotType = pair.Value;
+                }
+            }
+            savedTypes.Clear();
+        }
     }
 
-    // ЖЕЛЕЗНЫЙ ХАНИНГ-ЩИТ: Навсегда спасает Player.log от спама
+    // ЖЕЛЕЗНЫЙ ХАНИНГ-ЩИТ: Навсегда спасает Player.log от спама инпута
     [HarmonyPatch(typeof(PMC_Setting), "GetKeyDown")]
     public class PMC_Setting_GetKeyDown_ShieldPatch
     {
