@@ -2,68 +2,30 @@
 using UnityEngine;
 using System;
 using System.IO;
-using System.Reflection;
 using System.Collections.Generic;
 
 namespace LingerieButtonsFilter
 {
+    // ====================================================================
+    // АВТОМАТИЧЕСКИЙ РАНТАЙМ-РЕСТАВРАТОР ПЕРЧАТОК И ВЫТЕСНИТЕЛЬ ПИРСИНГОВ
+    // Перехватывает фабричный метод Utility.Instantiate, который 100% сидит
+    // в основной памяти игры и вызывается при любой экипировке в шкафу!
+    // ====================================================================
+    [HarmonyPatch(typeof(Utility), "Instantiate", new Type[] { typeof(Transform) })]
     public class ClosetClickPatch
     {
-        private static bool isClosetPatched = false;
-
-        // Метод ручного наката: вызывается контроллером, когда всё ТОЧНО сидит в памяти
-        public static void ApplyManualPatch()
+        [HarmonyPrefix]
+        public static void Prefix(Transform original)
         {
-            if (isClosetPatched) return;
+            if (original == null) return;
 
             try
             {
-                var manualHarmony = new Harmony("com.yourname.swpt.closetclick");
+                string itemNameLower = original.name.ToLower().Replace("(clone)", "").Trim();
 
-                foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-                {
-                    string asmName = assembly.GetName().Name;
-                    if (asmName.StartsWith("System") || asmName.StartsWith("mscorlib") || asmName.StartsWith("Mono")) continue;
-
-                    foreach (Type type in assembly.GetTypes())
-                    {
-                        if (type != null && type.Name == "InventoryClosetItem")
-                        {
-                            MethodInfo originalMethod = type.GetMethod("ButtonTryOn", BindingFlags.Public | BindingFlags.Instance);
-                            MethodInfo prefixMethod = typeof(ClosetClickPatch).GetMethod("Prefix", BindingFlags.Static | BindingFlags.Public);
-
-                            if (originalMethod != null && prefixMethod != null)
-                            {
-                                manualHarmony.Patch(originalMethod, prefix: new HarmonyMethod(prefixMethod));
-                                isClosetPatched = true;
-                                Debug.Log("====================================================================");
-                                Debug.Log("[SWPT АНАТОМИЯ]: КЛАСС InventoryClosetItem НАЙДЕН! ЗАЩИТА ПЕРЧАТОК АКТИВИРОВАНА!");
-                                return;
-                            }
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[SWPT КРИТ] Ошибка ручного наката патча шкафа: {ex.Message}");
-            }
-        }
-
-        public static bool Prefix(object __instance)
-        {
-            if (__instance == null) return true;
-
-            try
-            {
-                FieldInfo itemField = __instance.GetType().GetField("item", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (itemField == null) return true;
-
-                Transform itemTransform = (Transform)itemField.GetValue(__instance);
-                if (itemTransform == null) return true;
-
-                string itemNameLower = itemTransform.name.ToLower().Replace("(clone)", "").Trim();
-
+                // ----------------====================================================
+                // ЧИТАЕМ БЛОКНОТ НА ЛЕТУ ПРЯМО В МОМЕНТ СПАВНА
+                // ----------------====================================================
                 Dictionary<string, int> clickMapTable = new Dictionary<string, int>();
                 string filePath = Path.Combine(BepInEx.Paths.ConfigPath, "Lingerie_Item_Mapping.txt");
                 if (File.Exists(filePath))
@@ -85,56 +47,72 @@ namespace LingerieButtonsFilter
                     }
                 }
 
+                // Проверяем, занесен ли спавнящийся предмет в наш Блокнот
                 if (clickMapTable.TryGetValue(itemNameLower, out int customCategoryId))
                 {
-                    var itemComponent = itemTransform.GetComponent<Item>();
-                    if (customCategoryId == 100 && itemComponent != null && itemComponent.slotType == SlotType.none) return true;
-
                     CharacterCustomization curCustomization = Global.code?.uiInventory?.curCustomization;
-                    if (curCustomization == null) return true;
+                    if (curCustomization == null) return;
 
-                    curCustomization.showArmor = false;
-                    bool isAlreadyWearing = curCustomization.IsWearing(itemTransform.name);
-                    string customMarker = $"custom_{customCategoryId}";
-
-                    foreach (Transform child in curCustomization.GetComponentsInChildren<Transform>(true))
+                    // ----------------====================================================
+                    // СИТУАЦИЯ 1: СПАСЕНИЕ КРУЖЕВНЫХ ПЕРЧАТОК ОТ УНИЧТОЖЕНИЯ
+                    // Если игра спавнит Маску (102) или Кляп (103), но перед этим стерла перчатки -
+                    // мы перехватываем этот миг и ищем, лежали ли у игрока перчатки в сундуке?
+                    // ----------------====================================================
+                    if (customCategoryId == 102 || customCategoryId == 103)
                     {
-                        if (child == null || !child.gameObject.activeSelf) continue;
-                        string childName = child.name.ToLower().Replace("(clone)", "").Trim();
-
-                        int wornCategoryId = -1;
-                        foreach (var pair in clickMapTable)
+                        // Проверяем: если на кукле СЕЙЧАС физически пропал объект перчаток (lingerieGloves равен null),
+                        // мы сканируем сундук игрока, находим там настоящие кружевные перчатки и спавним их обратно!
+                        if (curCustomization.lingerieGloves == null && Global.code?.playerLingerieStorage?.items?.items != null)
                         {
-                            if (childName.Contains(pair.Key))
+                            foreach (Transform t in Global.code.playerLingerieStorage.items.items)
                             {
-                                wornCategoryId = pair.Value;
-                                break;
+                                if (t == null) continue;
+                                string storageItemName = t.name.ToLower().Replace("(clone)", "").Trim();
+
+                                // Если вещь на складе НЕ занесена в блокнот - значит это стандартные перчатки игры!
+                                var itemComponent = t.GetComponent<Item>();
+                                if (itemComponent != null && itemComponent.slotType == SlotType.lingeriegloves && !clickMapTable.ContainsKey(storageItemName))
+                                {
+                                    // Реставрируем перчатки обратно на руки героини!
+                                    Debug.Log($"[SWPT АНАТОМИЯ]: Защита активирована! Реставрируем вытесненные перчатки '{t.name}' обратно на руки!");
+                                    Transform restoredGloves = Utility.Instantiate(t);
+                                    curCustomization.AddItem(restoredGloves, "lingerieGloves");
+                                    break;
+                                }
                             }
                         }
+                    }
 
-                        if (wornCategoryId == customCategoryId && childName != itemNameLower)
+                    // ----------------====================================================
+                    // СИТУАЦИЯ 2: ХИРУРГИЧЕСКОЕ ВЫТЕСНЕНИЕ ПИРСИНГОВ / ОШЕЙНИКОВ
+                    // Находим и принудительно выключаем старую модель ЭТОЙ ЖЕ категории на кукле,
+                    // гарантируя, что один пирсинг чисто снимет другой, а не спавнится кашей поверх!
+                    // ----------------====================================================
+                    if (customCategoryId != 100)
+                    {
+                        foreach (Transform child in curCustomization.GetComponentsInChildren<Transform>(true))
                         {
-                            Debug.Log($"[SWPT ШКАФ]: Вытеснение! Насильно удаляем старую модель '{child.name}' из категории {customCategoryId}...");
-                            child.gameObject.SetActive(false);
-                            GameObject.Destroy(child.gameObject);
+                            if (child == null || !child.gameObject.activeSelf) continue;
+                            string childName = child.name.ToLower().Replace("(clone)", "").Trim();
+
+                            if (clickMapTable.TryGetValue(childName, out int wornCategoryId))
+                            {
+                                // Если на теле горит старая вещь из ТОЙ ЖЕ категории (и это не тот же самый предмет)
+                                if (wornCategoryId == customCategoryId && childName != itemNameLower)
+                                {
+                                    Debug.Log($"[SWPT АНАТОМИЯ]: Вытеснение! Насильно удаляем старую модель '{child.name}' из категории {customCategoryId}...");
+                                    child.gameObject.SetActive(false);
+                                    GameObject.Destroy(child.gameObject);
+                                }
+                            }
                         }
                     }
-
-                    if (!isAlreadyWearing)
-                    {
-                        Debug.Log($"[SWPT ШКАФ]: Спавним предмет '{itemTransform.name}' на виртуальный маркер '{customMarker}'...");
-                        Transform newModelTransform = Utility.Instantiate(itemTransform);
-                        curCustomization.AddItem(newModelTransform, customMarker);
-                    }
-
-                    Global.code?.uiInventory?.ButtonUnderwearGroup();
-                    Global.code?.uiInventory?.RefreshEquipment();
-                    return false;
                 }
             }
-            catch (Exception ex) { Debug.LogError($"[SWPT ШКАФ КРИТ]: {ex.Message}"); }
-
-            return true;
+            catch (Exception ex)
+            {
+                Debug.LogError($"[SWPT АНАТОМИЯ КРИТ]: Ошибка в реставраторе Instantiate: {ex.Message}");
+            }
         }
     }
 }
