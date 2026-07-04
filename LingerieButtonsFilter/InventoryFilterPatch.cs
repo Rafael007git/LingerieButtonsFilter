@@ -136,72 +136,71 @@ namespace LingerieButtonsFilter
     }
 
     // ====================================================================
-    // БРОНЕБОЙНЫЙ ХИРУРГИЧЕСКИЙ ПАТЧ НА ИСПОЛЬЗОВАНИЕ ПРЕДМЕТА
-    // Перекрашивает типы ВСЕХ вещей в инвентаре на микросекунду клика,
-    // гарантируя, что игра корректно обнаружит и снимет старый предмет!
+    // АВТОНОМНЫЙ ПАТЧ АНАТОМИЧЕСКИХ КОНФЛИКТОВ
+    // Работает точечно в момент вызова метода Item.Use().
+    // Самостоятельно находит и выключает старые вещи той же категории на кукле персонажа!
     // ====================================================================
     [HarmonyPatch(typeof(Item), "Use")]
     public class Item_Use_Patch
     {
-        // Храним оригинальные типы всех измененных вещей, чтобы вернуть их в Postfix
-        private static Dictionary<Item, SlotType> backupTypes = new Dictionary<Item, SlotType>();
-
         [HarmonyPrefix]
-        public static void Prefix()
+        public static void Prefix(Item __instance, CharacterCustomization ___characterCustomization)
         {
-            backupTypes.Clear();
-            if (Global.code?.playerLingerieStorage?.items?.items == null) return;
+            if (__instance == null) return;
 
-            // В момент клика мы переводим ВЕСЬ инвентарь игрока на стандартную карту слотов.
-            // Теперь игра при проверке конфликтов куклы железно увидит, что, например, 
-            // один пирсинг-shoes заменяет другой пирсинг-shoes!
-            foreach (Transform t in Global.code.playerLingerieStorage.items.items)
+            string newItemName = __instance.gameObject.name.ToLower().Replace("(clone)", "").Trim();
+
+            // 1. Проверяем, записана ли НОВАЯ вещь, по которой кликнули, в нашем Блокноте
+            if (MainPlugin.ItemMappingTable.TryGetValue(newItemName, out int newCategory))
             {
-                if (t == null) continue;
-                var itemComponent = t.GetComponent<Item>();
-                if (itemComponent == null) continue;
+                // Для общей категории Accessories (100) конфликты не нужны — пусть платья надеваются свободно
+                if (newCategory == 100) return;
 
-                string nameLower = t.name.ToLower().Replace("(clone)", "").Trim();
+                // Получаем доступ к кукле персонажа (если Harmony не смог прокинуть её через тройное подчеркивание, берем глобально)
+                CharacterCustomization cc = ___characterCustomization ?? GameObject.FindObjectOfType<CharacterCustomization>();
+                if (cc == null) return;
 
-                if (MainPlugin.ItemMappingTable.TryGetValue(nameLower, out int customSlotId))
+                // 2. Нам нужно найти на сцене уже надетые трехмерные объекты старых модов.
+                // В Unity все надетые вещи спавнятся как дочерние объекты внутри скелета куклы.
+                // Мы ищем их по именам, которые записаны в нашей таблице маппинга!
+                foreach (var pair in MainPlugin.ItemMappingTable)
                 {
-                    // Сохраняем оригинал, если еще не сохраняли
-                    if (!backupTypes.ContainsKey(itemComponent))
+                    // Ищем СТАРИНУЮ вещь, которая относится к ТОЙ ЖЕ САМОЙ категории, что и новая
+                    if (pair.Value == newCategory && pair.Key != newItemName)
                     {
-                        backupTypes.Add(itemComponent, itemComponent.slotType);
-                    }
+                        // Пытаемся найти трехмерный объект старой вещи на кукле персонажа
+                        // Ищем и по чистому имени, и с приставкой (Clone), так как игра спавнит префабы
+                        Transform oldWornVisual = cc.transform.Find($"Submesh/{pair.Key}") ??
+                                                  cc.transform.Find($"Submesh/{pair.Key}(Clone)") ??
+                                                  cc.transform.Find(pair.Key) ??
+                                                  cc.transform.Find($"{pair.Key}(Clone)");
 
-                    // На микросекунду подменяем типы на легальные игровые слоты
-                    switch (customSlotId)
-                    {
-                        case 101: itemComponent.slotType = SlotType.helmet; break;      // Hats -> Шлем (0)
-                        case 102: itemComponent.slotType = SlotType.none; break;        // Eyes (Маски) -> none (10)
-                        case 103: itemComponent.slotType = SlotType.gloves; break;      // Mouth (Кляпы) -> gloves (9)
-                        case 104: itemComponent.slotType = SlotType.necklace; break;    // Earrings -> necklace (4)
-                        case 111: itemComponent.slotType = SlotType.lingeriegloves; break; // Wrists -> lingeriegloves (16)
-                        case 112: itemComponent.slotType = SlotType.ring; break;        // Neck (Ошейники) -> ring (5)
-                        case 113: itemComponent.slotType = SlotType.shoes; break;       // Nipples (Пирсинги) -> shoes (6)
+                        // Если старого объекта на сцене нет, пробуем глубокий поиск по всему скелету куклы
+                        if (oldWornVisual == null)
+                        {
+                            foreach (Transform child in cc.GetComponentsInChildren<Transform>(true))
+                            {
+                                string childName = child.name.ToLower().Replace("(clone)", "").Trim();
+                                if (childName == pair.Key && child.gameObject.activeSelf)
+                                {
+                                    oldWornVisual = child;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // 3. Нашли старый надетый пирсинг или кляп! Насильно ВЫКЛЮЧАЕМ его трехмерную модель,
+                        // имитируя чистое и мгновенное снятие предмета с куклы персонажа!
+                        if (oldWornVisual != null && oldWornVisual.gameObject.activeSelf)
+                        {
+                            oldWornVisual.gameObject.SetActive(false);
+                            Debug.Log($"[SWPT АНАТОМИЯ]: Хирургически снята старая модель '{oldWornVisual.name}' для освобождения категории {newCategory}!");
+                        }
                     }
                 }
             }
-        }
-
-        [HarmonyPostfix]
-        public static void Postfix()
-        {
-            // Как только метод Use() отработал, вещь наделась, а старая снялась — 
-            // мы МГНОВЕННО возвращаем всему инвентарю оригинальные чистые типы из ассетов!
-            foreach (var pair in backupTypes)
-            {
-                if (pair.Key != null)
-                {
-                    pair.Key.slotType = pair.Value;
-                }
-            }
-            backupTypes.Clear();
         }
     }
-
 
     // ЖЕЛЕЗНЫЙ ХАНИНГ-ЩИТ: Навсегда спасает Player.log от спама инпута
     [HarmonyPatch(typeof(PMC_Setting), "GetKeyDown")]
