@@ -68,6 +68,11 @@ namespace LingerieButtonsFilter
                     {
                         cat2.gameObject.AddComponent<InventoryUiController>();
                     }
+
+                    // ТРИУМФАЛЬНЫЙ НАКАТ ПАТЧА: Шкаф гарантированно загружен на этой сцене!
+                    // Передаем сюда инстанс нашего Harmony
+                    var manualHarmony = new Harmony("com.yourname.swpt.closetclick");
+                    ClosetClickPatch.ApplyManualPatch(manualHarmony);
                 }
             };
 
