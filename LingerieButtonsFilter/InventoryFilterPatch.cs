@@ -36,6 +36,7 @@ namespace LingerieButtonsFilter
 
                 int state = (int)stateField.GetValue(__instance);
 
+                // Перехватываем рантайм при открытии инвентаря или переключении вкладок
                 if (state == 1 && MainPlugin.FilterMode != 0 && originalItemsBackup == null)
                 {
                     if (Global.code?.playerLingerieStorage?.items?.items == null) return;
@@ -44,6 +45,78 @@ namespace LingerieButtonsFilter
                     originalItemsBackup = new List<Transform>(gameItemsList);
                     List<Transform> filteredItems = new List<Transform>();
 
+                    // ----------------====================================================
+                    // ШАГ 1: СКАНЕР КУКЛЫ И ПЕЧАТЬ ТАБЛИЦЫ СЛОТОВ (ПРЯМО ЗДЕСЬ!)
+                    // ----------------====================================================
+                    CharacterCustomization cc = GameObject.FindObjectOfType<CharacterCustomization>();
+                    Dictionary<int, string> virtualSlotsMap = new Dictionary<int, string>();
+                    List<Transform> visualObjectsToDestroy = new List<Transform>();
+
+                    if (cc != null)
+                    {
+                        Debug.Log("====================================================================");
+                        Debug.Log("[SWPT АНАТОМИЯ]: Инвентарь обновлен! Сканируем 3D-модели на кукле...");
+
+                        foreach (Transform child in cc.GetComponentsInChildren<Transform>(true))
+                        {
+                            if (child == null || !child.gameObject.activeSelf) continue;
+
+                            string cleanName = child.name.ToLower().Replace("(clone)", "").Trim();
+
+                            int matchedCategory = -1;
+                            foreach (var pair in MainPlugin.ItemMappingTable)
+                            {
+                                if (cleanName.Contains(pair.Key))
+                                {
+                                    matchedCategory = pair.Value;
+                                    break;
+                                }
+                            }
+
+                            if (matchedCategory > 100)
+                            {
+                                if (virtualSlotsMap.ContainsKey(matchedCategory))
+                                {
+                                    string oldItemName = virtualSlotsMap[matchedCategory];
+                                    Debug.LogWarning($" -> [КОНФЛИКТ СЛОТА {matchedCategory}]: Модель '{child.name}' наложилась на '{oldItemName}'!");
+                                    if (!visualObjectsToDestroy.Contains(child)) visualObjectsToDestroy.Add(child);
+                                }
+                                else
+                                {
+                                    virtualSlotsMap.Add(matchedCategory, child.name);
+                                }
+                            }
+                        }
+
+                        // ПЕЧАТЬ ТАБЛИЦЫ
+                        Debug.Log("--- ТЕКУЩЕЕ СОСТОЯНИЕ АНАТОМИЧЕСКИХ СЛОТОВ ПЕРСОНАЖА ---");
+                        Debug.Log($" -> Слот 101 (Hats):       {(virtualSlotsMap.ContainsKey(101) ? virtualSlotsMap[101] : "[Свободен]")}");
+                        Debug.Log($" -> Слот 102 (Eyes/Маски):  {(virtualSlotsMap.ContainsKey(102) ? virtualSlotsMap[102] : "[Свободен]")}");
+                        Debug.Log($" -> Слот 103 (Mouth/Кляпы): {(virtualSlotsMap.ContainsKey(103) ? virtualSlotsMap[103] : "[Свободен]")}");
+                        Debug.Log($" -> Слот 104 (Earrings):   {(virtualSlotsMap.ContainsKey(104) ? virtualSlotsMap[104] : "[Свободен]")}");
+                        Debug.Log($" -> Слот 111 (Wrists):     {(virtualSlotsMap.ContainsKey(111) ? virtualSlotsMap[111] : "[Свободен]")}");
+                        Debug.Log($" -> Слот 112 (Neck):       {(virtualSlotsMap.ContainsKey(112) ? virtualSlotsMap[112] : "[Свободен]")}");
+                        Debug.Log($" -> Слот 113 (Nipples):    {(virtualSlotsMap.ContainsKey(113) ? virtualSlotsMap[113] : "[Свободен]")}");
+                        Debug.Log("-------------------------------------------------------");
+
+                        // ХИРУРГИЧЕСКОЕ ВЫТЕСНЕНИЕ СТАРЫХ МОДЕЛЕЙ С ТЕЛА
+                        if (visualObjectsToDestroy.Count > 0)
+                        {
+                            foreach (Transform oldVisual in visualObjectsToDestroy)
+                            {
+                                if (oldVisual != null)
+                                {
+                                    Debug.Log($"[SWPT АНАТОМИЯ]: Уничтожаем лишнюю модель '{oldVisual.name}'...");
+                                    oldVisual.gameObject.SetActive(false);
+                                    GameObject.Destroy(oldVisual.gameObject);
+                                }
+                            }
+                        }
+                    }
+
+                    // ----------------====================================================
+                    // ШАГ 2: ФИЛЬТРАЦИЯ ПРЕДМЕТОВ ПО КНОПКАМ UI
+                    // ----------------====================================================
                     foreach (Transform itemTransform in originalItemsBackup)
                     {
                         if (itemTransform == null) continue;
@@ -54,17 +127,28 @@ namespace LingerieButtonsFilter
                             int slotTypeInt = (int)itemComponent.slotType;
                             string itemNameLower = itemTransform.name.ToLower().Replace("(clone)", "").Trim();
 
-                            // Проверяем кастомную категорию из Lingerie_Item_Mapping.txt
-                            if (MainPlugin.ItemMappingTable.TryGetValue(itemNameLower, out int customSlotId))
+                            // Фильтруем UI строго по Contains из нашего Блокнота
+                            int uiCategory = 100;
+                            bool foundInMap = false;
+                            foreach (var pair in MainPlugin.ItemMappingTable)
                             {
-                                slotTypeInt = customSlotId;
+                                if (itemNameLower.Contains(pair.Key))
+                                {
+                                    uiCategory = pair.Value;
+                                    foundInMap = true;
+                                    break;
+                                }
+                            }
+
+                            if (foundInMap)
+                            {
+                                slotTypeInt = uiCategory;
                             }
                             else if (slotTypeInt < 100)
                             {
-                                slotTypeInt = 100; // По умолчанию Accessories
+                                slotTypeInt = 100;
                             }
 
-                            // Распределяем по кнопкам UI
                             if (MainPlugin.FilterMode == 1)
                             {
                                 if ((slotTypeInt >= 101 && slotTypeInt <= 104) || slotTypeInt == 7)
@@ -86,7 +170,7 @@ namespace LingerieButtonsFilter
                     gameItemsList.AddRange(filteredItems);
                 }
             }
-            catch (Exception ex) { Debug.LogError($"[SWPT Filter] Ошибка UI-фильтрации: {ex.Message}"); }
+            catch (Exception ex) { Debug.LogError($"[SWPT Filter] Ошибка монолитного патча: {ex.Message}"); }
         }
 
         [HarmonyPostfix]
@@ -102,7 +186,9 @@ namespace LingerieButtonsFilter
             {
                 Type iteratorType = __instance.GetType();
                 FieldInfo stateField = iteratorType.GetField("<>1__state", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (stateField != null && (int)stateField.GetValue(__instance) == -1)
+                if (stateField == null) return;
+
+                if ((int)stateField.GetValue(__instance) == -1)
                 {
                     RestoreImmediately();
                 }
@@ -117,11 +203,9 @@ namespace LingerieButtonsFilter
                 try
                 {
                     List<Transform> gameItemsList = Global.code.playerLingerieStorage.items.items;
-                    gameItemsList.Clear();
-                    gameItemsList.AddRange(originalItemsBackup);
-                    originalItemsBackup = null;
+                    gameItemsList.Clear(); gameItemsList.AddRange(originalItemsBackup); originalItemsBackup = null;
                 }
-                catch (Exception ex) { Debug.LogError($"[SWPT Filter] Ошибка восстановления списка: {ex.Message}"); }
+                catch (Exception ex) { Debug.LogError($"[SWPT Filter] Ошибка восстановления: {ex.Message}"); }
             }
         }
     }
