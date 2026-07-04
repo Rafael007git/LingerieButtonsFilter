@@ -11,9 +11,6 @@ namespace LingerieButtonsFilter
     {
         private static List<Transform> originalItemsBackup = null;
 
-        // Папка для хранения оригинальных типов на время обновления куклы
-        private static Dictionary<Item, SlotType> tempSavedTypes = new Dictionary<Item, SlotType>();
-
         [HarmonyTargetMethod]
         public static MethodBase TargetMethod()
         {
@@ -67,7 +64,7 @@ namespace LingerieButtonsFilter
                             {
                                 if (MainPlugin.ItemMappingTable.TryGetValue(itemNameLower, out int customSlotId))
                                 {
-                                    slotTypeInt = customSlotId; // Для UI кнопок
+                                    slotTypeInt = customSlotId; // Используем СТРОГО для фильтрации кнопок UI!
                                 }
                                 else if (slotTypeInt < 100)
                                 {
@@ -139,47 +136,44 @@ namespace LingerieButtonsFilter
     }
 
     // ====================================================================
-    // ЖЕЛЕЗНЫЙ ВР-ПАТЧ НАДВИГАНИЯ КОНФЛИКТОВ ЧЕРЕЗ REFRESH EQUIPMENT
-    // Перехватывает системное обновление куклы персонажа, которое точно есть в VR!
+    // ХИРУРГИЧЕСКИЙ ПАТЧ НА ИСПОЛЬЗОВАНИЕ ПРЕДМЕТА
+    // Подменяет типы в ассете СТРОГО в момент вызова метода Item.Use()
     // ====================================================================
-    [HarmonyPatch(typeof(CharacterCustomization), "RefreshEquipment")]
-    public class CharacterCustomization_Refresh_Patch
+    [HarmonyPatch(typeof(Item), "Use")]
+    public class Item_Use_Patch
     {
-        private static Dictionary<Item, SlotType> savedTypes = new Dictionary<Item, SlotType>();
+        private static SlotType originalSavedType;
+        private static bool wasModified = false;
+        private static Item activeItemComponent = null;
 
         [HarmonyPrefix]
-        public static void Prefix()
+        public static void Prefix(Item __instance)
         {
-            savedTypes.Clear();
-            if (Global.code?.playerLingerieStorage?.items?.items == null) return;
+            wasModified = false;
+            activeItemComponent = null;
 
-            // Перед тем как кукла обновит одежду, мы временно подменяем типы вещей по нашему Блокноту,
-            // чтобы игра сама автоматически убрала конфликты пирсингов и освободила перчатки!
-            foreach (Transform t in Global.code.playerLingerieStorage.items.items)
+            if (__instance == null) return;
+
+            string nameLower = __instance.gameObject.name.ToLower().Replace("(clone)", "").Trim();
+
+            // Если вещь занесена в Блокнот маппинга, выдаем ей стандартный тип игры на время выполнения метода Use!
+            if (MainPlugin.ItemMappingTable.TryGetValue(nameLower, out int customSlotId))
             {
-                if (t == null) continue;
-                var itemComponent = t.GetComponent<Item>();
-                if (itemComponent == null) continue;
+                originalSavedType = __instance.slotType;
+                activeItemComponent = __instance;
+                wasModified = true;
 
-                string nameLower = t.name.ToLower().Replace("(clone)", "").Trim();
-
-                if (MainPlugin.ItemMappingTable.TryGetValue(nameLower, out int customSlotId))
+                switch (customSlotId)
                 {
-                    if (!savedTypes.ContainsKey(itemComponent))
-                    {
-                        savedTypes.Add(itemComponent, itemComponent.slotType);
-                    }
-
-                    switch (customSlotId)
-                    {
-                        case 101: itemComponent.slotType = SlotType.helmet; break;      // Hats -> Шлем (0)
-                        case 102: itemComponent.slotType = SlotType.none; break;        // Eyes -> none (10)
-                        case 103: itemComponent.slotType = SlotType.gloves; break;      // Mouth -> gloves (9)
-                        case 104: itemComponent.slotType = SlotType.necklace; break;    // Earrings -> necklace (4)
-                        case 111: itemComponent.slotType = SlotType.lingeriegloves; break; // Wrists -> lingeriegloves (16)
-                        case 112: itemComponent.slotType = SlotType.ring; break;        // Neck -> ring (5)
-                        case 113: itemComponent.slotType = SlotType.shoes; break;       // Nipples -> shoes (6)
-                    }
+                    case 101: __instance.slotType = SlotType.helmet; break;      // Hats -> Шлем (0)
+                    case 102: __instance.slotType = SlotType.none; break;        // Eyes (Маски) -> none (10)
+                    case 103: __instance.slotType = SlotType.gloves; break;      // Mouth (Кляпы) -> gloves (9)
+                    case 104: __instance.slotType = SlotType.necklace; break;    // Earrings -> necklace (4)
+                    case 111: __instance.slotType = SlotType.lingeriegloves; break; // Wrists -> lingeriegloves (16)
+                    case 112: __instance.slotType = SlotType.ring; break;        // Neck (Ошейники) -> ring (5)
+                    case 113: __instance.slotType = SlotType.shoes; break;       // Nipples (Пирсинги) -> shoes (6)
+                    default:
+                        wasModified = false; break;
                 }
             }
         }
@@ -187,16 +181,11 @@ namespace LingerieButtonsFilter
         [HarmonyPostfix]
         public static void Postfix()
         {
-            // Как только кукла обновилась, мгновенно возвращаем оригинальные типы ассетов,
-            // чтобы инвентарь и склад игры работали в штатном режиме!
-            foreach (var pair in savedTypes)
+            // Мгновенно возвращаем тип обратно сразу после того, как метод Use завершился!
+            if (wasModified && activeItemComponent != null)
             {
-                if (pair.Key != null)
-                {
-                    pair.Key.slotType = pair.Value;
-                }
+                activeItemComponent.slotType = originalSavedType;
             }
-            savedTypes.Clear();
         }
     }
 
