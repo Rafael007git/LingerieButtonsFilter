@@ -51,56 +51,42 @@ namespace LingerieButtonsFilter
                         var itemComponent = itemTransform.GetComponent<Item>();
                         if (itemComponent != null)
                         {
-                            // Сохраняем исходные данные для диагностики
-                            SlotType originalType = itemComponent.slotType;
-                            int slotTypeInt = (int)originalType;
+                            // Оставляем исходный тип для локальной фильтрации на UI кнопок
+                            int slotTypeInt = (int)itemComponent.slotType;
                             string itemNameLower = itemTransform.name.ToLower().Replace("(clone)", "").Trim();
-                            string mappingResult = "ACCESSORIE (По умолчанию)";
 
-                            bool isStandard = (originalType == SlotType.bra ||
-                                               originalType == SlotType.panties ||
-                                               originalType == SlotType.stockings ||
-                                               originalType == SlotType.suspenders ||
-                                               originalType == SlotType.heels);
+                            bool isStandard = (itemComponent.slotType == SlotType.bra ||
+                                               itemComponent.slotType == SlotType.panties ||
+                                               itemComponent.slotType == SlotType.stockings ||
+                                               itemComponent.slotType == SlotType.suspenders ||
+                                               itemComponent.slotType == SlotType.heels);
 
                             if (!isStandard)
                             {
+                                // Ищем предмет в нашей текстовой базе данных Lingerie_Item_Mapping.txt
                                 if (MainPlugin.ItemMappingTable.TryGetValue(itemNameLower, out int customSlotId))
                                 {
-                                    slotTypeInt = customSlotId;
-                                    mappingResult = ((CustomSlotType)customSlotId).ToString();
+                                    slotTypeInt = customSlotId; // Задаем ID (100-113) ТОЛЬКО для сортировки кнопок!
 
-                                    // Наш временный маппинг по слотам (18-24)
-                                    switch (customSlotId)
-                                    {
-                                        case 101: itemComponent.slotType = (SlotType)18; break;
-                                        case 102: itemComponent.slotType = (SlotType)19; break;
-                                        case 103: itemComponent.slotType = (SlotType)20; break;
-                                        case 104: itemComponent.slotType = (SlotType)21; break;
-                                        case 111: itemComponent.slotType = (SlotType)22; break;
-                                        case 112: itemComponent.slotType = (SlotType)23; break;
-                                        case 113: itemComponent.slotType = (SlotType)24; break;
-                                        default: break;
-                                    }
+                                    // МАГИЯ СВОБОДНЫХ СЛОТОВ:
+                                    // Если вы записали вещь в Блокнот, мы насильно превращаем её тип 
+                                    // в SlotType.none (10) на уровне игрового компонента!
+                                    // Это заставит игру вешать маски, кляпы и ошейники в свободные слоты misc1-misc8,
+                                    // они перестанут воевать с перчатками (lingeriegloves) и будут надеваться одновременно!
+                                    itemComponent.slotType = SlotType.none;
                                 }
                                 else if (slotTypeInt < 100)
                                 {
+                                    // Если вещи из модов нет в блокноте, она по умолчанию считается общим аксессуаром.
                                     slotTypeInt = 100;
                                 }
                             }
 
-                            // ДИДНОСТИЧЕСКИЙ ВЫВОД: Выводим подробный лог по КАЖДОМУ кастомному предмету,
-                            // который сейчас обрабатывается интерфейсом!
-                            if (!isStandard)
-                            {
-                                Debug.Log($"[SWPT ДИАГНОСТИКА]: Предмет='{itemTransform.name}' | " +
-                                          $"Исходный тип в ассете={originalType} ({(int)originalType}) | " +
-                                          $"Распознан в Блокноте как={mappingResult} | " +
-                                          $"Итоговый слот для куклы={itemComponent.slotType} ({(int)itemComponent.slotType})");
-                            }
-
+                            // --- СТРОГОЕ РАСПРЕДЕЛЕНИЕ ПО ФИЗИЧЕСКИМ КНОПКАМ ИНТЕРФЕЙСА ---
                             if (MainPlugin.FilterMode == 1)
                             {
+                                // КНОПКА MASKS: Собирает Hats (101), Eyes (102), Mouth (103), Earrings (104)
+                                // И родной тип 7 (если он где-то остался)
                                 if ((slotTypeInt >= 101 && slotTypeInt <= 104) || slotTypeInt == 7)
                                 {
                                     filteredItems.Add(itemTransform);
@@ -108,6 +94,7 @@ namespace LingerieButtonsFilter
                             }
                             else if (MainPlugin.FilterMode == 2)
                             {
+                                // КНОПКА OTHER: Собирает Accessorie (100), Wrists (111), Neck (112), Nipples (113)
                                 if (slotTypeInt == 100 || (slotTypeInt >= 111 && slotTypeInt <= 113))
                                 {
                                     filteredItems.Add(itemTransform);
