@@ -221,7 +221,7 @@ namespace LingerieButtonsFilter
         {
             // ФИНАЛЬНЫЙ ТРИГГЕР-ОХОТНИК: Шкаф 100% открыт на экране, DLL распакована!
             // Накатываем защиту кликов в ту же миллисекунду, когда игрок пользуется фильтрами!
-            ClosetClickPatch.ApplyManualPatch();
+            // ClosetClickPatch.ApplyManualPatch();
 
             UIInventory uiInventory = GameObject.FindObjectOfType<UIInventory>();
             if (uiInventory != null)

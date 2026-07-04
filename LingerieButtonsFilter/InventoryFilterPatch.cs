@@ -11,8 +11,6 @@ namespace LingerieButtonsFilter
     public class InventoryFilterPatch
     {
         private static List<Transform> originalItemsBackup = null;
-
-        // Предохранитель от зацикливания при автоснятии вещи
         private static bool isProcessingAutoUnequip = false;
 
         [HarmonyTargetMethod]
@@ -81,7 +79,7 @@ namespace LingerieButtonsFilter
                     catch { }
 
                     // ----------------====================================================
-                    // ШАГ 1: СКАНЕР КУКЛЫ И ИНИЦИАЦИЯ ВИРТУАЛЬНОГО КЛИКА СНЯТИЯ
+                    // ШАГ 1: СКАНЕР КУКЛЫ И ИНИЦИАЦИЯ СНЯТИЯ ДЛЯ ПИРСИНГОВ / ОШЕЙНИКОВ
                     // ----------------====================================================
                     CharacterCustomization cc = GameObject.FindObjectOfType<CharacterCustomization>();
                     Dictionary<int, string> virtualSlotsMap = new Dictionary<int, string>();
@@ -105,11 +103,10 @@ namespace LingerieButtonsFilter
                             {
                                 if (virtualSlotsMap.ContainsKey(matchedCategory))
                                 {
-                                    // ОБНАРУЖЕНО НАЛОЖЕНИЕ! На кукле горят две вещи одной категории!
                                     string oldItemName = virtualSlotsMap[matchedCategory];
-                                    Debug.Log($"[SWPT АНАТОМИЯ]: Конфликт категории {matchedCategory}! Модель '{child.name}' наложилась на '{oldItemName}'");
+                                    Debug.Log($"[SWPT АНАТОМИЯ]: Наложение категории {matchedCategory}! '{child.name}' наложилась на '{oldItemName}'");
 
-                                    // БРОНЕБОЙНЫЙ ПОИСК СТАРЕЙ ВЕЩИ В СУНДУКЕ (Используем Бэкап списка и Contains!)
+                                    // Ищем старый пирсинг на складе, чтобы симулировать его автоснятие повторным кликом
                                     foreach (Transform t in originalItemsBackup)
                                     {
                                         if (t == null) continue;
@@ -130,38 +127,22 @@ namespace LingerieButtonsFilter
                             }
                         }
 
-                        // ПЕЧАТЬ ТАБЛИЦЫ СЛОТОВ В КОНСОЛЬ В СЕКУНДУ КЛИКА
-                        Debug.Log("--- ТЕКУЩЕЕ СОСТОЯНИЕ АНАТОМИЧЕСКИХ СЛОТОВ ПЕРСОНАЖА ---");
-                        Debug.Log(" -> Слот 101 (Hats):       " + (virtualSlotsMap.ContainsKey(101) ? virtualSlotsMap[101] : "[Свободен]"));
-                        Debug.Log(" -> Слот 102 (Eyes/Маски):  " + (virtualSlotsMap.ContainsKey(102) ? virtualSlotsMap[102] : "[Свободен]"));
-                        Debug.Log(" -> Слот 103 (Mouth/Кляпы): " + (virtualSlotsMap.ContainsKey(103) ? virtualSlotsMap[103] : "[Свободен]"));
-                        Debug.Log(" -> Слот 104 (Earrings):   " + (virtualSlotsMap.ContainsKey(104) ? virtualSlotsMap[104] : "[Свободен]"));
-                        Debug.Log(" -> Слот 111 (Wrists):     " + (virtualSlotsMap.ContainsKey(111) ? virtualSlotsMap[111] : "[Свободен]"));
-                        Debug.Log(" -> Слот 112 (Neck):       " + (virtualSlotsMap.ContainsKey(112) ? virtualSlotsMap[112] : "[Свободен]"));
-                        Debug.Log(" -> Слот 113 (Nipples):    " + (virtualSlotsMap.ContainsKey(113) ? virtualSlotsMap[113] : "[Свободен]"));
-                        Debug.Log("-------------------------------------------------------");
-
-                        // ЗАПУСКАЕМ ВИРТУАЛЬНЫЙ КЛИК СНЯТИЯ СТАРОЙ ВЕЩИ
+                        // ВЫЗЫВАЕМ АВТОСНЯТИЕ СТАРОГО ПИРСИНГА
                         if (itemToClickTakeOff != null)
                         {
                             try
                             {
-                                Debug.Log($"[SWPT АНАТОМИЯ]: Запускаем симуляцию повторного клика для авто-снятия вещи '{itemToClickTakeOff.gameObject.name}'...");
                                 isProcessingAutoUnequip = true;
-                                itemToClickTakeOff.Use(cc); // Просим вещь снять саму себя по правилам игры!
+                                itemToClickTakeOff.Use(cc); // Старый пирсинг чисто снимает сам себя!
                                 isProcessingAutoUnequip = false;
                             }
-                            catch (Exception ex)
-                            {
-                                isProcessingAutoUnequip = false;
-                                Debug.LogError($"Ошибка виртуального клика: {ex.Message}");
-                            }
+                            catch { isProcessingAutoUnequip = false; }
                         }
                     }
 
                     // ----------------====================================================
-                    // ШАГ 2: ДВУХЭТАПНАЯ ФИЛЬТРАЦИЯ UI И ЗАЩИТА ПЕРЧАТОК ЧЕРЕЗ MUTATION
-                    // ----------------====================================================
+                    // ШАГ 2: ЧИСТАЯ ДВУХЭТАПНАЯ ФИЛЬТРАЦИЯ UI (БЕЗ ОПАСНЫХ МУТАЦИЙ ТИПОВ!)
+                    // --------------------------------====================================
                     foreach (Transform itemTransform in originalItemsBackup)
                     {
                         if (itemTransform == null) continue;
@@ -186,22 +167,8 @@ namespace LingerieButtonsFilter
                                 if (itemNameLower.Contains(pair.Key)) { uiCategory = pair.Value; foundInMap = true; break; }
                             }
 
-                            if (foundInMap)
-                            {
-                                slotTypeInt = uiCategory;
-
-                                // МИКРО-МУТАЦИЯ МАСОК ПРЯМО В СПИСКЕ:
-                                // Переписываем тип масок и кляпов на легальный none (10) в памяти!
-                                // Теперь игра при клике на них в шкафу НИКОГДА больше не сотрет кружевные перчатки!
-                                if (itemComponent.slotType == SlotType.lingeriegloves && (uiCategory == 102 || uiCategory == 103))
-                                {
-                                    itemComponent.slotType = SlotType.none;
-                                }
-                            }
-                            else if (!isStandard)
-                            {
-                                slotTypeInt = 100;
-                            }
+                            if (foundInMap) slotTypeInt = uiCategory;
+                            else if (!isStandard) slotTypeInt = 100;
 
                             if (MainPlugin.FilterMode == 1)
                             {
@@ -241,6 +208,62 @@ namespace LingerieButtonsFilter
                 List<Transform> gameItemsList = Global.code.playerLingerieStorage.items.items;
                 gameItemsList.Clear(); gameItemsList.AddRange(originalItemsBackup); originalItemsBackup = null;
             }
+        }
+    }
+
+    // ====================================================================
+    // АВТОНОМНЫЙ РЕСТАВРАТОР КРУЖЕВНЫХ ПЕРЧАТОК
+    // Срабатывает в самый последний кадр клика по шкафу.
+    // Если на кукле горит маска, но исчезли перчатки — он мгновенно возвращает их на руки!
+    // ====================================================================
+    [HarmonyPatch(typeof(UIInventory), "RefreshEquipment")]
+    public class UIInventory_Refresh_GlovesRestorer_Patch
+    {
+        [HarmonyPostfix]
+        public static void Postfix()
+        {
+            try
+            {
+                CharacterCustomization cc = GameObject.FindObjectOfType<CharacterCustomization>();
+                if (cc == null || Global.code?.playerLingerieStorage?.items?.items == null) return;
+
+                // Проверяем по скелету: горит ли сейчас на лице маска?
+                bool isMaskActive = false;
+                bool isRealGlovesActive = false;
+
+                foreach (Transform child in cc.GetComponentsInChildren<Transform>(true))
+                {
+                    if (child == null || !child.gameObject.activeSelf) continue;
+                    string nameLower = child.name.ToLower();
+
+                    if (nameLower.Contains("blindfold") || nameLower.Contains("gag") || nameLower.Contains("mask")) isMaskActive = true;
+                    if (nameLower.Contains("gloves") && !nameLower.Contains("blindfold") && !nameLower.Contains("gag")) isRealGlovesActive = true;
+                }
+
+                // КРИТИЧЕСКИЙ МИГ: Маска на лице горит, а перчатки стёрлись оригинальным кодом шкафа!
+                if (isMaskActive && !isRealGlovesActive)
+                {
+                    // Сканируем сундук игрока, выуживаем оттуда оригинальные кружевные перчатки и спавним их обратно!
+                    foreach (Transform t in Global.code.playerLingerieStorage.items.items)
+                    {
+                        if (t == null) continue;
+                        string storageName = t.name.ToLower();
+
+                        // Ищем оригинальный предмет перчаток (которого нет в Блокноте маппинга)
+                        var itemComponent = t.GetComponent<Item>();
+                        if (itemComponent != null && itemComponent.slotType == SlotType.lingeriegloves && !storageName.Contains("blindfold") && !storageName.Contains("gag"))
+                        {
+                            Debug.Log($"[SWPT АНАТОМИЯ]: Обнаружено замятие перчаток маской! Авто-реставрация перчаток '{t.name}' на руки куклы...");
+                            Transform restoredGloves = Utility.Instantiate(t);
+
+                            // Спавним их на альтернативный виртуальный маркер костей, чтобы игра их больше никогда не стёрла!
+                            cc.AddItem(restoredGloves, "lingerieGloves_backup");
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) { Debug.LogError($"[SWPT АНАТОМИЯ КРИТ]: Ошибка авто-реставратора перчаток: {ex.Message}"); }
         }
     }
 }
