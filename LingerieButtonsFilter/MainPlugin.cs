@@ -30,33 +30,7 @@ namespace LingerieButtonsFilter
             LoadEmbeddedIcons();
             LoadItemMappingTable();
 
-            // СТРОГИЙ НАУЧНЫЙ СКАНЕР: Ищем истинные методы использования предметов
-            try
-            {
-                Logger.LogInfo("=== АНАЛИЗ МЕТОДОВ КЛАССА ITEM ===");
-                foreach (var method in typeof(Item).GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
-                {
-                    string name = method.Name.ToLower();
-                    if (name.Contains("use") || name.Contains("equip") || name.Contains("wear") || name.Contains("click") || name.Contains("active"))
-                    {
-                        Logger.LogInfo($" -> [ITEM МЕТОД]: {method.Name}({string.Join(", ", System.Array.ConvertAll(method.GetParameters(), p => p.ParameterType.Name))})");
-                    }
-                }
-
-                // На всякий случай проверяем и ItemData из ModTool
-                Type itemDataType = typeof(MainPlugin).Assembly.GetType("ItemData") ?? typeof(UIInventory).Assembly.GetType("ItemData");
-                if (itemDataType != null)
-                {
-                    Logger.LogInfo("=== АНАЛИЗ МЕТОДОВ КЛАССА ITEMDATA ===");
-                    foreach (var method in itemDataType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
-                    {
-                        Logger.LogInfo($" -> [ITEMDATA МЕТОД]: {method.Name}({string.Join(", ", System.Array.ConvertAll(method.GetParameters(), p => p.ParameterType.Name))})");
-                    }
-                }
-            }
-            catch (Exception ex) { Logger.LogError($"Ошибка точечного шпиона: {ex.Message}"); }
-
-            // ПОДПИСКА НА СЦЕНЫ (Чистый, исправленный вариант без ошибок массивов)
+            // ПОДПИСКА НА СЦЕНЫ (Чистый, стабильный вариант с защитой от массивов Unity)
             UnityEngine.SceneManagement.SceneManager.sceneLoaded += (scene, mode) =>
             {
                 IsUiCustomized = false;
@@ -64,7 +38,7 @@ namespace LingerieButtonsFilter
                 // Находим массив всех объектов UIInventory на сцене
                 UIInventory[] foundInventories = Resources.FindObjectsOfTypeAll<UIInventory>();
 
-                // Если массив не пустой — берем самый первый [0] элемент!
+                // Если массив не пустой — берем строго первый элемент!
                 UIInventory uiInventory = (foundInventories != null && foundInventories.Length > 0)
                     ? foundInventories[0]
                     : null;
@@ -79,12 +53,12 @@ namespace LingerieButtonsFilter
                 }
             };
 
-
-            // ЗАПУСК ХАРМОНИ
+            // ЗАПУСК ХАРМОНИ ДЛЯ ВСЕХ СТАБИЛЬНЫХ КЛАССОВ (UI-Фильтр и Щит от спама)
+            // Он выполнится мгновенно и без единой ошибки, так как капризный шкаф из него убран!
             var harmony = new Harmony("com.yourname.swpt.inventoryfilter");
             harmony.PatchAll();
 
-            Logger.LogInfo("Мод гардероба 1.2.0 успешно инициализирован!");
+            Logger.LogInfo("Мод гардероба 1.2.0 успешно запущен и защищен!");
         }
 
 

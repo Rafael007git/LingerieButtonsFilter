@@ -10,6 +10,11 @@ namespace LingerieButtonsFilter
         // Вызывается один раз при подселении скрипта на сцену сейва
         private void Start()
         {
+            // БРОНЕБОЙНЫЙ СИСТЕМНЫЙ СИНХРОНИЗАТОР: 
+            // Как только наши кнопки появились на экране, мы принудительно накатываем патч клика шкафа!
+            // В этот момент все DLL интерфейса гарантированно сидят в памяти!
+            ClosetClickPatch.ApplyManualPatch();
+
             ModifyInterface(this.transform);
         }
 

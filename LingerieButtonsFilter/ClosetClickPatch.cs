@@ -7,41 +7,13 @@ using System.Collections.Generic;
 
 namespace LingerieButtonsFilter
 {
-    // ====================================================================
-    // ТОЧЕЧНЫЙ ПАТЧ НА ОТКРЫТИЕ ПАНЕЛИ ГАРДЕРОБА
-    // Ловит момент, когда игрок открывает вкладку белья, и накатывает защиту на лету!
-    // ====================================================================
-    [HarmonyPatch]
-    public class ClosetTogglePatch
+    public class ClosetClickPatch
     {
         private static bool isClosetPatched = false;
 
-        [HarmonyTargetMethod]
-        public static MethodBase TargetMethod()
+        // Метод ручного наката: вызывается контроллером, когда всё ТОЧНО сидит в памяти
+        public static void ApplyManualPatch()
         {
-            // Находим метод ToggleLingerie, который вы раскопали в коде игры!
-            // Он гарантированно сидит в классах управления интерфейсом
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                string asmName = assembly.GetName().Name;
-                if (asmName.StartsWith("System") || asmName.StartsWith("mscorlib") || asmName.StartsWith("Mono")) continue;
-
-                foreach (Type type in assembly.GetTypes())
-                {
-                    if (type != null && (type.Name == "UIInventory" || type.Name == "UICloset" || type.Name == "Mainframe"))
-                    {
-                        MethodInfo method = type.GetMethod("ToggleLingerie", BindingFlags.Public | BindingFlags.Instance);
-                        if (method != null) return method;
-                    }
-                }
-            }
-            return null;
-        }
-
-        [HarmonyPrefix]
-        public static void Prefix()
-        {
-            // Если патч на кнопки шкафа уже активен — отдыхаем
             if (isClosetPatched) return;
 
             try
@@ -65,22 +37,19 @@ namespace LingerieButtonsFilter
                                 manualHarmony.Patch(originalMethod, prefix: new HarmonyMethod(prefixMethod));
                                 isClosetPatched = true;
                                 Debug.Log("====================================================================");
-                                Debug.Log("[SWPT АНАТОМИЯ]: КЛАСС InventoryClosetItem РАСПАКОВАН В ПАМЯТИ! ПАТЧ УСПЕШНО НАКАТАН!");
+                                Debug.Log("[SWPT АНАТОМИЯ]: КЛАСС InventoryClosetItem НАЙДЕН! ЗАЩИТА ПЕРЧАТОК АКТИВИРОВАНА!");
                                 return;
                             }
                         }
                     }
                 }
             }
-            catch (Exception ex) { Debug.LogError($"[SWPT КРИТ] Ошибка отложенного наката: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[SWPT КРИТ] Ошибка ручного наката патча шкафа: {ex.Message}");
+            }
         }
-    }
 
-    // ====================================================================
-    // САМ ПАТЧ ЗАЩИТЫ КЛИКА (Выполняется, когда кликаем по иконке в шкафу)
-    // ====================================================================
-    public class ClosetClickPatch
-    {
         public static bool Prefix(object __instance)
         {
             if (__instance == null) return true;
@@ -107,10 +76,8 @@ namespace LingerieButtonsFilter
                         string[] parts = trimmed.Split(new char[] { '=' }, 2);
                         if (parts.Length == 2)
                         {
-                            // ИСПРАВЛЕНО: Теперь обрезаем пробелы СТРОГО у элементов массива, а не у самого массива!
                             string key = parts[0].Trim().ToLower();
                             string val = parts[1].Trim().ToLower();
-
                             int id = 100;
                             if (Enum.TryParse(val, true, out CustomSlotType mType)) id = (int)mType;
                             if (!clickMapTable.ContainsKey(key)) clickMapTable.Add(key, id);
