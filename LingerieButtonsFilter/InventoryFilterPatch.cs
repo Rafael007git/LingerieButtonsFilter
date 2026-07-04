@@ -44,6 +44,16 @@ namespace LingerieButtonsFilter
                     originalItemsBackup = new List<Transform>(gameItemsList);
                     List<Transform> filteredItems = new List<Transform>();
 
+                    // Читаем обновленные массивы слов из конфигурации
+                    string[] kwAccessorie = ModConfig.KeywordsAccessorie.Value.Split(',');
+                    string[] kwHats = ModConfig.KeywordsHats.Value.Split(',');
+                    string[] kwEyes = ModConfig.KeywordsEyes.Value.Split(',');
+                    string[] kwMouth = ModConfig.KeywordsMouth.Value.Split(',');
+                    string[] kwEarrings = ModConfig.KeywordsEarrings.Value.Split(',');
+                    string[] kwWrists = ModConfig.KeywordsWrists.Value.Split(',');
+                    string[] kwNeck = ModConfig.KeywordsNeck.Value.Split(',');
+                    string[] kwNipples = ModConfig.KeywordsNipples.Value.Split(',');
+
                     foreach (Transform itemTransform in originalItemsBackup)
                     {
                         if (itemTransform == null) continue;
@@ -53,28 +63,45 @@ namespace LingerieButtonsFilter
                         {
                             var slotType = itemComponent.slotType;
                             int slotTypeInt = (int)slotType;
-                            string itemName = itemTransform.name;
+                            string itemNameLower = itemTransform.name.ToLower();
 
-                            bool isMask = (slotTypeInt == 7 ||
-                                           itemName.IndexOf("Mask", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                           itemName.IndexOf("Blindfold", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                           itemName.IndexOf("Piercing", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                           itemName.IndexOf("Gag", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                           itemName.IndexOf("Bound", StringComparison.OrdinalIgnoreCase) >= 0);
+                            // --- ЖЕЛЕЗНАЯ ЛОГИКА ТАБЛИЦЫ СООТВЕТСТВИЙ ---
+                            // 1. Если это стандартная вещь игры (лифчик, трусы и т.д.), мы её НЕ трогаем
+                            bool isStandard = (slotType == SlotType.bra || slotType == SlotType.panties ||
+                                               slotType == SlotType.stockings || slotType == SlotType.suspenders ||
+                                               slotType == SlotType.heels);
 
-                            bool isStandardCategory = (slotType == SlotType.bra ||
-                                                       slotType == SlotType.panties ||
-                                                       slotType == SlotType.stockings ||
-                                                       slotType == SlotType.suspenders ||
-                                                       slotType == SlotType.heels);
-
-                            if (MainPlugin.FilterMode == 1 && isMask)
+                            if (!isStandard)
                             {
-                                filteredItems.Add(itemTransform);
+                                // 2. Проверяем, записан ли этот предмет в нашем файле lingerie_mapping.txt
+                                if (MainPlugin.ItemMappingTable.TryGetValue(itemNameLower, out int customSlotId))
+                                {
+                                    slotTypeInt = customSlotId; // Перераспределяем в ваш точный слот!
+                                }
+                                else if (slotTypeInt < 100)
+                                {
+                                    // 3. Предмета нет в списке, и это чужой мод (ID меньше 100, например none=10 или gloves=9).
+                                    // Пускай падает в дефолтную категорию Accessorie (100), как вы и просили!
+                                    slotTypeInt = 100;
+                                }
                             }
-                            else if (MainPlugin.FilterMode == 2 && !isMask && !isStandardCategory)
+
+                            // Распределяем полученный ID по двум нашим физическим кнопкам на UI
+                            if (MainPlugin.FilterMode == 1)
                             {
-                                filteredItems.Add(itemTransform);
+                                // КНОПКА MASKS: Собираем всё, что на голове (101-104)
+                                if (slotTypeInt == 101 || slotTypeInt == 102 || slotTypeInt == 103 || slotTypeInt == 104 || slotTypeInt == 7)
+                                {
+                                    filteredItems.Add(itemTransform);
+                                }
+                            }
+                            else if (MainPlugin.FilterMode == 2)
+                            {
+                                // КНОПКА OTHER: Собираем всё, что на теле (100, 111, 112, 113)
+                                if (slotTypeInt == 100 || slotTypeInt == 111 || slotTypeInt == 112 || slotTypeInt == 113)
+                                {
+                                    filteredItems.Add(itemTransform);
+                                }
                             }
                         }
                     }
