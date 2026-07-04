@@ -65,6 +65,15 @@ namespace LingerieButtonsFilter
                                 if (MainPlugin.ItemMappingTable.TryGetValue(itemNameLower, out int customSlotId))
                                 {
                                     slotTypeInt = customSlotId; // Используем СТРОГО для фильтрации кнопок UI!
+
+                                    // --- РАНТАЙМ-МУТАЦИЯ ФАЛЬШИВЫХ ПЕРЧАТОК ---
+                                    // Если автор мода зашил маске или кляпу (Eyes/Mouth) тип lingeriegloves,
+                                    // мы принудительно переписываем его в ассете на чистый none (10).
+                                    // Вещь навсегда теряет связь со слотом рук и больше НИКОГДА не снимет перчатки!
+                                    if (itemComponent.slotType == SlotType.lingeriegloves && (customSlotId == 102 || customSlotId == 103))
+                                    {
+                                        itemComponent.slotType = SlotType.none;
+                                    }
                                 }
                                 else if (slotTypeInt < 100)
                                 {
@@ -136,69 +145,110 @@ namespace LingerieButtonsFilter
     }
 
     // ====================================================================
-    // АВТОНОМНЫЙ ПАТЧ АНАТОМИЧЕСКИХ КОНФЛИКТОВ
-    // Работает точечно в момент вызова метода Item.Use().
-    // Самостоятельно находит и выключает старые вещи той же категории на кукле персонажа!
+    // ВИРТУАЛЬНЫЙ АНАТОМИЧЕСКИЙ ДИСПЕТЧЕР (КЛИК СЦЕНАРИЙ "С")
+    // Перехватывает точечный метод Item.Use() в момент клика по предмету.
+    // Находит старую надеваную вещь той же категории и заставляет ее СНЯТЬ СЕБЯ САМУ повторным вызовом Use()!
     // ====================================================================
     [HarmonyPatch(typeof(Item), "Use")]
     public class Item_Use_Patch
     {
+        // ПЕРЕНЕСЛИ СЮДА: Теперь переменная видна внутри этого контекста!
+        private static bool isProcessingCustomEquip = false;
+
         [HarmonyPrefix]
-        public static void Prefix(Item __instance, CharacterCustomization ___characterCustomization)
+        public static bool Prefix(Item __instance, CharacterCustomization _customization)
         {
-            if (__instance == null) return;
+            // Если этот вызов инициирован нашим же модом для снятия старой вещи — 
+            // мы просто пропускаем его, позволяя игре честно снять предмет!
+            if (isProcessingCustomEquip) return true;
+
+            if (__instance == null) return true;
 
             string newItemName = __instance.gameObject.name.ToLower().Replace("(clone)", "").Trim();
 
-            // 1. Проверяем, записана ли НОВАЯ вещь, по которой кликнули, в нашем Блокноте
+            // 1. Проверяем, занесен ли КЛИКНУТЫЙ предмет в наш Блокнот маппинга
             if (MainPlugin.ItemMappingTable.TryGetValue(newItemName, out int newCategory))
             {
-                // Для общей категории Accessories (100) конфликты не нужны — пусть платья надеваются свободно
-                if (newCategory == 100) return;
+                // Accessories (100) пропускаем — пусть платья и портупеи надеваются свободно
+                if (newCategory == 100) return true;
 
-                // Получаем доступ к кукле персонажа (если Harmony не смог прокинуть её через тройное подчеркивание, берем глобально)
-                CharacterCustomization cc = ___characterCustomization ?? GameObject.FindObjectOfType<CharacterCustomization>();
-                if (cc == null) return;
+                // Проверяем, надета ли вещь СЕЙЧАС (В игре надетые вещи проверяются по наличию их 3D-модели на кукле,
+                // либо по внутренним галочкам. Но самый надежный способ — спросить у менеджера шкафа/персонажа, 
+                // либо проверить, включен ли визуальный объект на кукле.
+                // Чтобы не гадать, мы просто смотрим: если игрок кликнул по УЖЕ НАДЕТОЙ вещи — он хочет её снять.
+                // В таком случае мы ничего не вытесняем и отдаем управление игре!
+                CharacterCustomization cc = _customization ?? GameObject.FindObjectOfType<CharacterCustomization>();
 
-                // 2. Нам нужно найти на сцене уже надетые трехмерные объекты старых модов.
-                // В Unity все надетые вещи спавнятся как дочерние объекты внутри скелета куклы.
-                // Мы ищем их по именам, которые записаны в нашей таблице маппинга!
-                foreach (var pair in MainPlugin.ItemMappingTable)
+                // Проверяем глубоким поиском, горит ли уже моделька этой НОВОЙ вещи на персонаже?
+                bool isNewItemAlreadyWorn = false;
+                if (cc != null)
                 {
-                    // Ищем СТАРИНУЮ вещь, которая относится к ТОЙ ЖЕ САМОЙ категории, что и новая
-                    if (pair.Value == newCategory && pair.Key != newItemName)
+                    foreach (Transform child in cc.GetComponentsInChildren<Transform>(true))
                     {
-                        // Пытаемся найти трехмерный объект старой вещи на кукле персонажа
-                        // Ищем и по чистому имени, и с приставкой (Clone), так как игра спавнит префабы
-                        Transform oldWornVisual = cc.transform.Find($"Submesh/{pair.Key}") ??
-                                                  cc.transform.Find($"Submesh/{pair.Key}(Clone)") ??
-                                                  cc.transform.Find(pair.Key) ??
-                                                  cc.transform.Find($"{pair.Key}(Clone)");
-
-                        // Если старого объекта на сцене нет, пробуем глубокий поиск по всему скелету куклы
-                        if (oldWornVisual == null)
+                        if (child.name.ToLower().Replace("(clone)", "").Trim() == newItemName && child.gameObject.activeSelf)
                         {
+                            isNewItemAlreadyWorn = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (isNewItemAlreadyWorn) return true; // Игрок кликнул по надетому пирсингу -> игра его снимет сама
+
+                // 2. ИГРОК НАДЕВАЕТ НОВУЮ ВЕЩЬ! Ищем в сундуке старую вещь этой же анатомической категории
+                if (Global.code?.playerLingerieStorage?.items?.items == null || cc == null) return true;
+
+                Item itemToTakeOff = null;
+
+                foreach (Transform t in Global.code.playerLingerieStorage.items.items)
+                {
+                    if (t == null || t.gameObject.name.ToLower().Replace("(clone)", "").Trim() == newItemName) continue;
+
+                    string checkedName = t.gameObject.name.ToLower().Replace("(clone)", "").Trim();
+
+                    // Проверяем, относится ли эта вещь со склада к нашей категории?
+                    if (MainPlugin.ItemMappingTable.TryGetValue(checkedName, out int wornCategory))
+                    {
+                        if (wornCategory == newCategory)
+                        {
+                            // Нашли вещь из этой же категории в сундуке. Проверяем, горит ли её моделька на теле девушки?
                             foreach (Transform child in cc.GetComponentsInChildren<Transform>(true))
                             {
-                                string childName = child.name.ToLower().Replace("(clone)", "").Trim();
-                                if (childName == pair.Key && child.gameObject.activeSelf)
+                                if (child.name.ToLower().Replace("(clone)", "").Trim() == checkedName && child.gameObject.activeSelf)
                                 {
-                                    oldWornVisual = child;
+                                    itemToTakeOff = t.GetComponent<Item>();
                                     break;
                                 }
                             }
                         }
+                    }
+                    if (itemToTakeOff != null) break;
+                }
 
-                        // 3. Нашли старый надетый пирсинг или кляп! Насильно ВЫКЛЮЧАЕМ его трехмерную модель,
-                        // имитируя чистое и мгновенное снятие предмета с куклы персонажа!
-                        if (oldWornVisual != null && oldWornVisual.gameObject.activeSelf)
-                        {
-                            oldWornVisual.gameObject.SetActive(false);
-                            Debug.Log($"[SWPT АНАТОМИЯ]: Хирургически снята старая модель '{oldWornVisual.name}' для освобождения категории {newCategory}!");
-                        }
+                // 3. СИМУЛЯЦИЯ ПОВТОРНОГО КЛИКА: Если нашли старую надетую вещь, заставляем её СНЯТЬ СЕБЯ!
+                if (itemToTakeOff != null)
+                {
+                    try
+                    {
+                        Debug.Log($"[SWPT АНАТОМИЯ]: Категория {newCategory} занята предметом '{itemToTakeOff.gameObject.name}'. Инициируем виртуальный повторный клик для авто-снятия...");
+
+                        isProcessingCustomEquip = true;
+
+                        // Вызываем родной метод Use() старой вещи! Игра сама идеально уберет графику,
+                        // погасит галочку и обновит списки инвентаря без единого бага.
+                        itemToTakeOff.Use(cc);
+
+                        isProcessingCustomEquip = false;
+                    }
+                    catch (Exception ex)
+                    {
+                        isProcessingCustomEquip = false;
+                        Debug.LogError($" Ошибка симуляции снятия: {ex.Message}");
                     }
                 }
             }
+
+            return true; // Возвращаем true, давая игре штатно надеть наш новый предмет на пустое место!
         }
     }
 
