@@ -255,4 +255,56 @@ namespace LingerieButtonsFilter
             }
         }
     }
+
+    // ====================================================================
+    // ХИРУРГИЧЕСКИЙ ПЕРЕХВАТЧИК КЛИКА ДЛЯ МАСОК И ПЕРЧАТОК
+    // В момент клика временно превращает маску в тип none (10),
+    // полностью блокируя вытеснение перчаток из слота рук!
+    // ====================================================================
+    [HarmonyPatch(typeof(Item), "Use")]
+    public class Item_Use_MaskFix_Patch
+    {
+        private static SlotType originalSavedType;
+        private static bool wasModified = false;
+        private static Item activeItemComponent = null;
+
+        [HarmonyPrefix]
+        public static void Prefix(Item __instance)
+        {
+            wasModified = false;
+            activeItemComponent = null;
+
+            if (__instance == null) return;
+
+            string nameLower = __instance.gameObject.name.ToLower().Replace("(clone)", "").Trim();
+
+            // Если в Блокноте эта вещь записана как Маска (102) или Кляп (103) -
+            // мы на ОДНУ МИЛЛИСЕКУНДУ превращаем её в тип none (10) прямо перед экипировкой!
+            // Игра посчитает её обычным аксессуаром и НЕ тронет кружевные перчатки!
+            if (MainPlugin.ItemMappingTable.TryGetValue(nameLower, out int customSlotId))
+            {
+                if (customSlotId == 102 || customSlotId == 103)
+                {
+                    originalSavedType = __instance.slotType;
+                    activeItemComponent = __instance;
+                    wasModified = true;
+
+                    __instance.slotType = SlotType.none; // Временная мутация ассета
+                    Debug.Log($"[SWPT АНАТОМИЯ]: Маска/Кляп '{nameLower}' временно переведена в тип NONE для защиты перчаток!");
+                }
+            }
+        }
+
+        [HarmonyPostfix]
+        public static void Postfix()
+        {
+            // Как только метод Use() завершился и маска заспавнилась на тело,
+            // мгновенно возвращаем оригинальный тип, чтобы не ломать логику сохранений игры
+            if (wasModified && activeItemComponent != null)
+            {
+                activeItemComponent.slotType = originalSavedType;
+            }
+        }
+    }
+
 }
