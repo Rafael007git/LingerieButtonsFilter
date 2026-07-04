@@ -43,13 +43,6 @@ namespace LingerieButtonsFilter
                     List<Transform> gameItemsList = Global.code.playerLingerieStorage.items.items;
 
                     originalItemsBackup = new List<Transform>(gameItemsList);
-
-                    // ВРЕМЕННЫЙ ШПИОН: Печатает в консоль точные системные имена всех вещей игрока
-                    foreach (Transform t in originalItemsBackup)
-                    {
-                        if (t != null) Debug.Log($"[SWPT ШПИОН ИМЕН]: '{t.name}'");
-                    }
-
                     List<Transform> filteredItems = new List<Transform>();
 
                     foreach (Transform itemTransform in originalItemsBackup)
@@ -59,37 +52,43 @@ namespace LingerieButtonsFilter
                         var itemComponent = itemTransform.GetComponent<Item>();
                         if (itemComponent != null)
                         {
-                            var slotType = itemComponent.slotType;
-                            int slotTypeInt = (int)slotType;
-                            string itemNameLower = itemTransform.name.ToLower();
+                            string itemNameLower = itemTransform.name.ToLower().Replace("(clone)", "").Trim();
 
                             // --- ЖЕЛЕЗНАЯ ЛОГИКА ТАБЛИЦЫ СООТВЕТСТВИЙ ---
                             // 1. Стандартное белье игры (лифчики, трусики и т.д.) защищаем от любых изменений
-                            bool isStandard = (slotType == SlotType.bra || slotType == SlotType.panties ||
-                                               slotType == SlotType.stockings || slotType == SlotType.suspenders ||
-                                               slotType == SlotType.heels);
+                            bool isStandard = (itemComponent.slotType == SlotType.bra ||
+                                               itemComponent.slotType == SlotType.panties ||
+                                               itemComponent.slotType == SlotType.stockings ||
+                                               itemComponent.slotType == SlotType.suspenders ||
+                                               itemComponent.slotType == SlotType.heels);
 
                             if (!isStandard)
                             {
-                                // 2. Ищем предмет в текстовой базе данных Lingerie_Item_Mapping.txt
+                                // 2. Ищем предмет в нашей текстовой базе данных Lingerie_Item_Mapping.txt
                                 if (MainPlugin.ItemMappingTable.TryGetValue(itemNameLower, out int customSlotId))
                                 {
-                                    slotTypeInt = customSlotId; // Успешно перераспределяем в ваш точный слот
+                                    // НАСИЛЬНО ПЕРЕЗАПИСЫВАЕМ ТИП В КОМПОНЕНТЕ ИГРЫ!
+                                    // Теперь игра физически запомнит, что этот предмет имеет тип 101-113, 
+                                    // и не будет конфликтовать при надевании!
+                                    itemComponent.slotType = (SlotType)customSlotId;
                                 }
-                                else if (slotTypeInt < 100)
+                                else if ((int)itemComponent.slotType < 100)
                                 {
-                                    // 3. Если предмета нет в списке и это чужой старый мод (ID < 100, например none или gloves),
-                                    // насильно отправляем его в базовую категорию Accessorie (100)
-                                    slotTypeInt = 100;
-                                } // <-- Вот здесь должна быть просто ЧИСТАЯ скобка, без всяких "room"
+                                    // 3. Если предмета нет в списке и это чужой старый неопознанный мод,
+                                    // принудительно делаем его Accessorie (100) на уровне компонента!
+                                    itemComponent.slotType = (SlotType)100;
+                                }
                             }
+
+                            // Считываем уже обновленный, железно прописанный тип для фильтрации кнопок
+                            int finalSlotId = (int)itemComponent.slotType;
 
                             // --- РАСПРЕДЕЛЕНИЕ ПО ФИЗИЧЕСКИМ КНОПКАМ ИНТЕРФЕЙСА ---
                             if (MainPlugin.FilterMode == 1)
                             {
-                                // КНОПКА MASKS: Собирает всё, что на голове (ID 101, 102, 103, 104) 
-                                // и оставляет оригинальный тип 7 (lingeriegloves), если он не был переназначен на тело
-                                if ((slotTypeInt >= 101 && slotTypeInt <= 104) || slotTypeInt == 7)
+                                // КНОПКА MASKS: Собирает всё, что на голове (ID 101 — Hats, 102 — Eyes, 103 — Mouth, 104 — Earrings)
+                                // И родной тип 7 (lingeriegloves), если вы его вручную не переписали на тело
+                                if ((finalSlotId >= 101 && finalSlotId <= 104) || finalSlotId == 7)
                                 {
                                     filteredItems.Add(itemTransform);
                                 }
@@ -97,7 +96,7 @@ namespace LingerieButtonsFilter
                             else if (MainPlugin.FilterMode == 2)
                             {
                                 // КНОПКА OTHER: Собирает всё, что на теле (ID 100 — Accessorie, 111 — Wrists, 112 — Neck, 113 — Nipples)
-                                if (slotTypeInt == 100 || (slotTypeInt >= 111 && slotTypeInt <= 113))
+                                if (finalSlotId == 100 || (finalSlotId >= 111 && finalSlotId <= 113))
                                 {
                                     filteredItems.Add(itemTransform);
                                 }
@@ -112,6 +111,7 @@ namespace LingerieButtonsFilter
             }
             catch (Exception ex) { Debug.LogError($"[SWPT Filter] Ошибка Prefix: {ex.Message}"); }
         }
+
 
         [HarmonyPostfix]
         public static void Postfix(object __instance, ref bool __result)
