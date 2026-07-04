@@ -23,8 +23,6 @@ namespace LingerieButtonsFilter
         // Наша база данных: Ключ — имя предмета (в нижнем регистре), Значение — ID нового слота
         public static Dictionary<string, int> ItemMappingTable = new Dictionary<string, int>();
 
-        public static Action FilterModeChanged;
-
         private void Awake()
         {
             // Инициализируем конфигурацию и загружаем ресурсы
