@@ -10,11 +10,6 @@ namespace LingerieButtonsFilter
         // Вызывается один раз при подселении скрипта на сцену сейва
         private void Start()
         {
-            // БРОНЕБОЙНЫЙ СИСТЕМНЫЙ СИНХРОНИЗАТОР: 
-            // Как только наши кнопки появились на экране, мы принудительно накатываем патч клика шкафа!
-            // В этот момент все DLL интерфейса гарантированно сидят в памяти!
-            ClosetClickPatch.ApplyManualPatch();
-
             ModifyInterface(this.transform);
         }
 
@@ -224,6 +219,10 @@ namespace LingerieButtonsFilter
 
         private void TriggerGameRefresh()
         {
+            // ФИНАЛЬНЫЙ ТРИГГЕР-ОХОТНИК: Шкаф 100% открыт на экране, DLL распакована!
+            // Накатываем защиту кликов в ту же миллисекунду, когда игрок пользуется фильтрами!
+            ClosetClickPatch.ApplyManualPatch();
+
             UIInventory uiInventory = GameObject.FindObjectOfType<UIInventory>();
             if (uiInventory != null)
             {
