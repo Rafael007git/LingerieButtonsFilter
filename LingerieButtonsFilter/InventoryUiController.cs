@@ -57,7 +57,11 @@ namespace LingerieButtonsFilter
 
                     Button maskBtn = maskBtnObj.GetComponent<Button>();
                     maskBtn.onClick.RemoveAllListeners();
-                    maskBtn.onClick.AddListener(() => { MainPlugin.FilterMode = 1; TriggerGameRefresh(); });
+                    maskBtn.onClick.AddListener(() => {
+                        MainPlugin.FilterMode = 1;
+                        MainPlugin.FilterModeChanged?.Invoke(); // <--- НАШ ТРИГГЕР-РАДАР
+                        TriggerGameRefresh();
+                    });
                 }
                 else
                 {
@@ -72,19 +76,26 @@ namespace LingerieButtonsFilter
                 {
                     otherBtnObj = UnityEngine.Object.Instantiate(templateBtn.gameObject, cat2);
                     otherBtnObj.name = "Button OTHER";
-                    otherBtnObj.transform.SetParent(cat2, false); // Выдергиваем в корень Категории (2)
+                    otherBtnObj.transform.SetParent(cat2, false);
                     otherBtnObj.transform.localScale = Vector3.one;
                     ApplyTextAndCustomIcon(otherBtnObj, "OTHER", MainPlugin.OtherSprite);
 
                     Button otherBtn = otherBtnObj.GetComponent<Button>();
                     otherBtn.onClick.RemoveAllListeners();
-                    otherBtn.onClick.AddListener(() => { MainPlugin.FilterMode = 2; TriggerGameRefresh(); });
+
+                    // ДОБАВИЛИ ВЫЗОВ ТРИГГЕРА ДЛЯ OTHER СЮДА:
+                    otherBtn.onClick.AddListener(() => {
+                        MainPlugin.FilterMode = 2;
+                        MainPlugin.FilterModeChanged?.Invoke(); // <--- НАШ ТРИГГЕР-РАДАР
+                        TriggerGameRefresh();
+                    });
                 }
                 else
                 {
                     otherBtnObj = otherBtnTransform.gameObject;
                     otherBtnObj.transform.SetParent(cat2, false);
                 }
+
 
                 // Накатываем сброс нашего режима на стандартные кнопки игры
                 foreach (Transform child in cat2)

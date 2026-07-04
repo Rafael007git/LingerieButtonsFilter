@@ -12,6 +12,9 @@ namespace LingerieButtonsFilter
     [BepInPlugin("com.yourname.swpt.inventoryfilter", "SWPT Advanced Wardrobe", "1.2.0")]
     public class MainPlugin : BaseUnityPlugin
     {
+        // ОБЪЯВЛЯЕМ ЗДЕСЬ (чтобы кнопка из другого файла могла его вызвать):
+        public static Action FilterModeChanged;
+
         public static int FilterMode = 0; // 0 - дефолт, 1 - MASKS, 2 - OTHER
         public static bool IsUiCustomized = false;
         public static Sprite MasksSprite;
@@ -19,6 +22,8 @@ namespace LingerieButtonsFilter
 
         // Наша база данных: Ключ — имя предмета (в нижнем регистре), Значение — ID нового слота
         public static Dictionary<string, int> ItemMappingTable = new Dictionary<string, int>();
+
+        public static Action FilterModeChanged;
 
         private void Awake()
         {
@@ -53,28 +58,26 @@ namespace LingerieButtonsFilter
             }
             catch (Exception ex) { Logger.LogError($"Ошибка точечного шпиона: {ex.Message}"); }
 
-            // ПОДПИСКА НА СЦЕНЫ
+            // БРОНЕБОЙНЫЙ МНОГОСТУПЕНЧАТЫЙ РАДАР ИНИЦИАЛИЗАЦИИ
             UnityEngine.SceneManagement.SceneManager.sceneLoaded += (scene, mode) =>
             {
                 IsUiCustomized = false;
-                UIInventory uiInventory = Resources.FindObjectsOfTypeAll<UIInventory>().Length > 0
-                    ? Resources.FindObjectsOfTypeAll<UIInventory>()[0]
-                    : null;
 
-                if (uiInventory != null)
+                // Создаем Harmony-инстанс для ручного наката
+                var manualHarmony = new Harmony("com.yourname.swpt.closetclick");
+
+                // Попытка 1: Пробуем накатить сразу при загрузке сцены
+                ClosetClickPatch.ApplyManualPatch(manualHarmony);
+
+                // Попытка 2: Вешаем скрытый триггер на событие обновления интерфейса!
+                // Каждый раз, когда игра будет перерисовывать гардероб или вы будете кликать по кнопкам фильтра,
+                // наш плагин будет тихонько проверять память, пока класс наконец не появится!
+                MainPlugin.FilterModeChanged += () =>
                 {
-                    Transform cat2 = uiInventory.transform.Find("Right/Lingerie Group/Category (2)");
-                    if (cat2 != null && cat2.gameObject.GetComponent<InventoryUiController>() == null)
-                    {
-                        cat2.gameObject.AddComponent<InventoryUiController>();
-                    }
-
-                    // ТРИУМФАЛЬНЫЙ НАКАТ ПАТЧА: Шкаф гарантированно загружен на этой сцене!
-                    // Передаем сюда инстанс нашего Harmony
-                    var manualHarmony = new Harmony("com.yourname.swpt.closetclick");
                     ClosetClickPatch.ApplyManualPatch(manualHarmony);
-                }
+                };
             };
+
 
             // ЗАПУСК ХАРМОНИ
             var harmony = new Harmony("com.yourname.swpt.inventoryfilter");
