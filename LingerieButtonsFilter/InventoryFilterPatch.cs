@@ -233,8 +233,8 @@ namespace LingerieButtonsFilter
     }
 
     // ====================================================================
-    // ГЛОБАЛЬНЫЙ ГАРДЕРОБНЫЙ ЦЕМЕНТ: ГАРАНТИРУЕТ СОВМЕСТИМОСТЬ В МИРЕ И ВЕЗДЕ
-    // Насильно удерживает вторую вещь и рапортует о состоянии крючков misc1/misc2!
+    // СВЕРХ-ЦЕМЕНТ: НАМЕРТВО СВЯЗЫВАЕТ МАСКИ И ПЕРЧАТКИ В ОТКРЫТОМ МИРЕ
+    // Полностью игнорирует зачистку игры и гарантирует их 100% сожительство!
     // ====================================================================
     [HarmonyPatch(typeof(UIInventory), "RefreshEquipment")]
     public class UIInventory_GlobalCement_Patch
@@ -247,56 +247,59 @@ namespace LingerieButtonsFilter
                 CharacterCustomization cc = GameObject.FindObjectOfType<CharacterCustomization>();
                 if (cc == null) return;
 
-                bool maskPresent = false;
-                bool glovesPresent = false;
-
-                string misc1ItemName = "[Пусто]";
-                string misc2ItemName = "[Пусто]";
-
-                // Быстро сканируем скелет куклы после оригинальной очистки игры
+                // 1. ПРИНУДИТЕЛЬНАЯ ОЧИСТКА КРЮЧКОВ МИСК ПЕРЕД СПАВНОМ (Защита от дублирования полигонов)
                 foreach (Transform child in cc.GetComponentsInChildren<Transform>(true))
                 {
-                    if (child == null || !child.gameObject.activeSelf) continue;
-                    string nLower = child.name.ToLower();
-
-                    if (nLower.Contains("blindfold") || nLower.Contains("gag") || nLower.Contains("mask") || nLower.Contains("collar")) maskPresent = true;
-                    if (nLower.Contains("gloves") && !nLower.Contains("blindfold") && !nLower.Contains("gag")) glovesPresent = true;
-
-                    // ОПЕРАЦИЯ ПРОЗРЕНИЕ: Ловим то, что игра или наш реставратор привязали к крючкам misc!
+                    if (child == null) continue;
                     if (child.parent != null)
                     {
                         string parentName = child.parent.name.ToLower();
-                        if (parentName == "misc1") misc1ItemName = child.name;
-                        if (parentName == "misc2") misc2ItemName = child.name;
+                        // Если на крючке misc1 или misc2 висит старый клон — гасим и сжигаем его!
+                        if (parentName == "misc1" || parentName == "misc2")
+                        {
+                            child.gameObject.SetActive(false);
+                            GameObject.Destroy(child.gameObject);
+                        }
                     }
                 }
 
-                // ЦЕМЕНТ СИТУАЦИИ А: Маска горит, но перчатки стёрты — возвращаем их на misc1!
-                if (maskPresent && !glovesPresent && InventoryFilterPatch.lastActiveGlovesItem != null)
+                // 2. СВЕРХ-ЦЕМЕНТ: Если в памяти плагина зафиксированы выбранные перчатки — принудительно шьем на misc1!
+                if (InventoryFilterPatch.lastActiveGlovesItem != null)
                 {
-                    Transform restored = Utility.Instantiate(InventoryFilterPatch.lastActiveGlovesItem.transform);
-                    cc.AddItem(restored, "misc1");
-                    misc1ItemName = InventoryFilterPatch.lastActiveGlovesItem.gameObject.name;
+                    Transform restoredGloves = Utility.Instantiate(InventoryFilterPatch.lastActiveGlovesItem.transform);
+                    cc.AddItem(restoredGloves, "misc1");
                 }
 
-                // ЦЕМЕНТ СИТУАЦИИ Б: Перчатки горят, но маска стёрта — возвращаем её на misc2!
-                if (glovesPresent && !maskPresent && InventoryFilterPatch.lastActiveMaskItem != null)
+                // 3. СВЕРХ-ЦЕМЕНТ: Если в памяти плагина зафиксирована выбранная маска — принудительно шьем на misc2!
+                if (InventoryFilterPatch.lastActiveMaskItem != null)
                 {
-                    Transform restored = Utility.Instantiate(InventoryFilterPatch.lastActiveMaskItem.transform);
-                    cc.AddItem(restored, "misc2");
-                    misc2ItemName = InventoryFilterPatch.lastActiveMaskItem.gameObject.name;
+                    Transform restoredMask = Utility.Instantiate(InventoryFilterPatch.lastActiveMaskItem.transform);
+                    cc.AddItem(restoredMask, "misc2");
                 }
 
-                // РАПОРТ ДЛЯ СПОКОЙНОГО СНА СТАРШЕГО ИНЖЕНЕРА 🛡️💤
+                // 4. КОНТРОЛЬНЫЙ СЪЕМ ПОКАЗАНИЙ ДЛЯ ИДЕАЛЬНОГО СНА СТАРШЕГО ИНЖЕНЕРА 🛰️💤
+                string finalMisc1Name = "[Пусто]";
+                string finalMisc2Name = "[Пусто]";
+
+                foreach (Transform child in cc.GetComponentsInChildren<Transform>(true))
+                {
+                    if (child == null || !child.gameObject.activeSelf) continue;
+                    if (child.parent != null)
+                    {
+                        if (child.parent.name.ToLower() == "misc1") finalMisc1Name = child.name;
+                        if (child.parent.name.ToLower() == "misc2") finalMisc2Name = child.name;
+                    }
+                }
+
                 Debug.Log("====================================================================");
-                Debug.Log("[SWPT МЕНЕДЖЕР АНАТОМИИ]: Проверка физических вешалок куклы в мире:");
-                Debug.Log($"   -> Крючок МISC1 (Резерв Перчаток): {misc1ItemName}");
-                Debug.Log($"   -> Крючок МISC2 (Резерв Масок):    {misc2ItemName}");
+                Debug.Log("[SWPT СВЕРХ-ЦЕМЕНТ]: Железная фиксация вешалок куклы в рантайме мира:");
+                Debug.Log($"   -> Крючок МISC1 (Резерв Перчаток): {finalMisc1Name}");
+                Debug.Log($"   -> Крючок МISC2 (Резерв Масок):    {finalMisc2Name}");
                 Debug.Log("====================================================================");
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[SWPT ЦЕМЕНТ КРИТ]: Ошибка проверки вешалок: {ex.Message}");
+                Debug.LogError($"[SWPT СВЕРХ-ЦЕМЕНТ КРИТ]: Ошибка фиксации вешалок: {ex.Message}");
             }
         }
     }
