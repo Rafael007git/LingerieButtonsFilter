@@ -183,7 +183,7 @@ namespace LingerieButtonsFilter
                         {
                             Debug.Log($"[SWPT ДЕБАГ]: Замятие! Маска есть, перчатки стёрты. Насильно возвращаем '{lastActiveGlovesItem.gameObject.name}' на резервный маркер костей!");
                             Transform restored = Utility.Instantiate(lastActiveGlovesItem.transform);
-                            cc.AddItem(restored, "lingerieGloves_backup");
+                            cc.AddItem(restored, "misc1");
 
                             // ЖЕЛЕЗНЫЙ ПРЕДОХРАНИТЕЛЬ: Фиксируем, что перчатки реставрированы, гася бесконечный цикл!
                             glovesPresent = true;
@@ -194,7 +194,7 @@ namespace LingerieButtonsFilter
                         {
                             Debug.Log($"[SWPT ДЕБАГ]: Замятие! Перчатки есть, маска стёрта. Насильно возвращаем '{lastActiveMaskItem.gameObject.name}' на резервный маркер костей!");
                             Transform restored = Utility.Instantiate(lastActiveMaskItem.transform);
-                            cc.AddItem(restored, "lingerieGloves_backup2");
+                            cc.AddItem(restored, "misc2");
 
                             // ЖЕЛЕЗНЫЙ ПРЕДОХРАНИТЕЛЬ: Фиксируем, что маска реставрирована, гася бесконечный цикл!
                             maskPresent = true;
