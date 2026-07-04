@@ -12,6 +12,9 @@ namespace LingerieButtonsFilter
     {
         private static List<Transform> originalItemsBackup = null;
 
+        // Предохранитель от зацикливания при автоснятии вещи
+        private static bool isProcessingAutoUnequip = false;
+
         [HarmonyTargetMethod]
         public static MethodBase TargetMethod()
         {
@@ -29,6 +32,8 @@ namespace LingerieButtonsFilter
         [HarmonyPrefix]
         public static void Prefix(object __instance)
         {
+            if (isProcessingAutoUnequip) return;
+
             try
             {
                 Type iteratorType = __instance.GetType();
@@ -63,28 +68,99 @@ namespace LingerieButtonsFilter
                                 string[] parts = trimmed.Split(new char[] { '=' }, 2);
                                 if (parts.Length == 2)
                                 {
-                                    string itemName = parts[0].Trim().ToLower();
-                                    string typeStr = parts[1].Trim().ToLower();
+                                    string key = parts[0].Trim().ToLower();
+                                    string val = parts[1].Trim().ToLower();
 
-                                    int targetSlotId = 100;
-                                    if (Enum.TryParse(typeStr, true, out CustomSlotType matchedType))
-                                    {
-                                        targetSlotId = (int)matchedType;
-                                    }
-
-                                    if (!localMappingTable.ContainsKey(itemName))
-                                    {
-                                        localMappingTable.Add(itemName, targetSlotId);
-                                    }
+                                    int id = 100;
+                                    if (Enum.TryParse(val, true, out CustomSlotType matchedType)) id = (int)matchedType;
+                                    if (!localMappingTable.ContainsKey(key)) localMappingTable.Add(key, id);
                                 }
                             }
                         }
                     }
-                    catch (Exception ex) { Debug.LogError($"[SWPT] Ошибка авто-чтения файла: {ex.Message}"); }
-
+                    catch { }
 
                     // ----------------====================================================
-                    // ШАГ 2: ЭТАЛОННАЯ ДВУХЭТАПНАЯ ФИЛЬТРАЦИЯ UI ПО ЛОКАЛЬНОЙ ТАБЛИЦЕ
+                    // ШАГ 1: СКАНЕР КУКЛЫ И ИНИЦИАЦИЯ ВИРТУАЛЬНОГО КЛИКА СНЯТИЯ
+                    // ----------------====================================================
+                    CharacterCustomization cc = GameObject.FindObjectOfType<CharacterCustomization>();
+                    Dictionary<int, string> virtualSlotsMap = new Dictionary<int, string>();
+                    Item itemToClickTakeOff = null;
+
+                    if (cc != null)
+                    {
+                        foreach (Transform child in cc.GetComponentsInChildren<Transform>(true))
+                        {
+                            if (child == null || !child.gameObject.activeSelf) continue;
+
+                            string cleanName = child.name.ToLower().Replace("(clone)", "").Trim();
+
+                            int matchedCategory = -1;
+                            foreach (var pair in localMappingTable)
+                            {
+                                if (cleanName.Contains(pair.Key)) { matchedCategory = pair.Value; break; }
+                            }
+
+                            if (matchedCategory > 100)
+                            {
+                                if (virtualSlotsMap.ContainsKey(matchedCategory))
+                                {
+                                    // ОБНАРУЖЕНО НАЛОЖЕНИЕ! На кукле горят две вещи одной категории!
+                                    string oldItemName = virtualSlotsMap[matchedCategory];
+                                    Debug.Log($"[SWPT АНАТОМИЯ]: Конфликт категории {matchedCategory}! Модель '{child.name}' наложилась на '{oldItemName}'");
+
+                                    // БРОНЕБОЙНЫЙ ПОИСК СТАРЕЙ ВЕЩИ В СУНДУКЕ (Используем Бэкап списка и Contains!)
+                                    foreach (Transform t in originalItemsBackup)
+                                    {
+                                        if (t == null) continue;
+                                        string storageNameLower = t.gameObject.name.ToLower().Replace("(clone)", "").Trim();
+                                        string oldItemNameLower = oldItemName.ToLower().Replace("(clone)", "").Trim();
+
+                                        if (oldItemNameLower.Contains(storageNameLower) || storageNameLower.Contains(oldItemNameLower))
+                                        {
+                                            itemToClickTakeOff = t.GetComponent<Item>();
+                                            break;
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    virtualSlotsMap.Add(matchedCategory, child.name);
+                                }
+                            }
+                        }
+
+                        // ПЕЧАТЬ ТАБЛИЦЫ СЛОТОВ В КОНСОЛЬ В СЕКУНДУ КЛИКА
+                        Debug.Log("--- ТЕКУЩЕЕ СОСТОЯНИЕ АНАТОМИЧЕСКИХ СЛОТОВ ПЕРСОНАЖА ---");
+                        Debug.Log(" -> Слот 101 (Hats):       " + (virtualSlotsMap.ContainsKey(101) ? virtualSlotsMap[101] : "[Свободен]"));
+                        Debug.Log(" -> Слот 102 (Eyes/Маски):  " + (virtualSlotsMap.ContainsKey(102) ? virtualSlotsMap[102] : "[Свободен]"));
+                        Debug.Log(" -> Слот 103 (Mouth/Кляпы): " + (virtualSlotsMap.ContainsKey(103) ? virtualSlotsMap[103] : "[Свободен]"));
+                        Debug.Log(" -> Слот 104 (Earrings):   " + (virtualSlotsMap.ContainsKey(104) ? virtualSlotsMap[104] : "[Свободен]"));
+                        Debug.Log(" -> Слот 111 (Wrists):     " + (virtualSlotsMap.ContainsKey(111) ? virtualSlotsMap[111] : "[Свободен]"));
+                        Debug.Log(" -> Слот 112 (Neck):       " + (virtualSlotsMap.ContainsKey(112) ? virtualSlotsMap[112] : "[Свободен]"));
+                        Debug.Log(" -> Слот 113 (Nipples):    " + (virtualSlotsMap.ContainsKey(113) ? virtualSlotsMap[113] : "[Свободен]"));
+                        Debug.Log("-------------------------------------------------------");
+
+                        // ЗАПУСКАЕМ ВИРТУАЛЬНЫЙ КЛИК СНЯТИЯ СТАРОЙ ВЕЩИ
+                        if (itemToClickTakeOff != null)
+                        {
+                            try
+                            {
+                                Debug.Log($"[SWPT АНАТОМИЯ]: Запускаем симуляцию повторного клика для авто-снятия вещи '{itemToClickTakeOff.gameObject.name}'...");
+                                isProcessingAutoUnequip = true;
+                                itemToClickTakeOff.Use(cc); // Просим вещь снять саму себя по правилам игры!
+                                isProcessingAutoUnequip = false;
+                            }
+                            catch (Exception ex)
+                            {
+                                isProcessingAutoUnequip = false;
+                                Debug.LogError($"Ошибка виртуального клика: {ex.Message}");
+                            }
+                        }
+                    }
+
+                    // ----------------====================================================
+                    // ШАГ 2: ДВУХЭТАПНАЯ ФИЛЬТРАЦИЯ UI И ЗАЩИТА ПЕРЧАТОК ЧЕРЕЗ MUTATION
                     // ----------------====================================================
                     foreach (Transform itemTransform in originalItemsBackup)
                     {
@@ -107,37 +183,33 @@ namespace LingerieButtonsFilter
 
                             foreach (var pair in localMappingTable)
                             {
-                                if (itemNameLower.Contains(pair.Key))
-                                {
-                                    uiCategory = pair.Value;
-                                    foundInMap = true;
-                                    break;
-                                }
+                                if (itemNameLower.Contains(pair.Key)) { uiCategory = pair.Value; foundInMap = true; break; }
                             }
 
                             if (foundInMap)
                             {
                                 slotTypeInt = uiCategory;
+
+                                // МИКРО-МУТАЦИЯ МАСОК ПРЯМО В СПИСКЕ:
+                                // Переписываем тип масок и кляпов на легальный none (10) в памяти!
+                                // Теперь игра при клике на них в шкафу НИКОГДА больше не сотрет кружевные перчатки!
+                                if (itemComponent.slotType == SlotType.lingeriegloves && (uiCategory == 102 || uiCategory == 103))
+                                {
+                                    itemComponent.slotType = SlotType.none;
+                                }
                             }
                             else if (!isStandard)
                             {
-                                slotTypeInt = 100; // Только левые кастомные аксессуары улетают сюда
+                                slotTypeInt = 100;
                             }
 
-                            // Распределение по физическим кнопкам интерфейса
                             if (MainPlugin.FilterMode == 1)
                             {
-                                if ((slotTypeInt >= 101 && slotTypeInt <= 104) || slotTypeInt == 7)
-                                {
-                                    filteredItems.Add(itemTransform);
-                                }
+                                if ((slotTypeInt >= 101 && slotTypeInt <= 104) || slotTypeInt == 7) filteredItems.Add(itemTransform);
                             }
                             else if (MainPlugin.FilterMode == 2)
                             {
-                                if (slotTypeInt == 100 || (slotTypeInt >= 111 && slotTypeInt <= 113))
-                                {
-                                    filteredItems.Add(itemTransform);
-                                }
+                                if (slotTypeInt == 100 || (slotTypeInt >= 111 && slotTypeInt <= 113)) filteredItems.Add(itemTransform);
                             }
                         }
                     }
@@ -152,22 +224,12 @@ namespace LingerieButtonsFilter
         [HarmonyPostfix]
         public static void Postfix(object __instance, ref bool __result)
         {
-            if (!__result && originalItemsBackup != null)
-            {
-                RestoreImmediately();
-                return;
-            }
-
+            if (!__result && originalItemsBackup != null) { RestoreImmediately(); return; }
             try
             {
                 Type iteratorType = __instance.GetType();
                 FieldInfo stateField = iteratorType.GetField("<>1__state", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (stateField == null) return;
-
-                if ((int)stateField.GetValue(__instance) == -1)
-                {
-                    RestoreImmediately();
-                }
+                if (stateField != null && (int)stateField.GetValue(__instance) == -1) RestoreImmediately();
             }
             catch { }
         }
@@ -176,67 +238,9 @@ namespace LingerieButtonsFilter
         {
             if (originalItemsBackup != null && Global.code?.playerLingerieStorage?.items?.items != null)
             {
-                try
-                {
-                    List<Transform> gameItemsList = Global.code.playerLingerieStorage.items.items;
-                    gameItemsList.Clear();
-                    gameItemsList.AddRange(originalItemsBackup);
-                    originalItemsBackup = null;
-                }
-                catch (Exception ex) { Debug.LogError($"[SWPT Filter] Ошибка восстановления: {ex.Message}"); }
+                List<Transform> gameItemsList = Global.code.playerLingerieStorage.items.items;
+                gameItemsList.Clear(); gameItemsList.AddRange(originalItemsBackup); originalItemsBackup = null;
             }
         }
     }
-
-    // ====================================================================
-    // ХИРУРГИЧЕСКИЙ ПЕРЕХВАТЧИК КЛИКА ДЛЯ МАСОК И ПЕРЧАТОК
-    // В момент клика временно превращает маску в тип none (10),
-    // полностью блокируя вытеснение перчаток из слота рук!
-    // ====================================================================
-    [HarmonyPatch(typeof(Item), "Use")]
-    public class Item_Use_MaskFix_Patch
-    {
-        private static SlotType originalSavedType;
-        private static bool wasModified = false;
-        private static Item activeItemComponent = null;
-
-        [HarmonyPrefix]
-        public static void Prefix(Item __instance)
-        {
-            wasModified = false;
-            activeItemComponent = null;
-
-            if (__instance == null) return;
-
-            string nameLower = __instance.gameObject.name.ToLower().Replace("(clone)", "").Trim();
-
-            // Если в Блокноте эта вещь записана как Маска (102) или Кляп (103) -
-            // мы на ОДНУ МИЛЛИСЕКУНДУ превращаем её в тип none (10) прямо перед экипировкой!
-            // Игра посчитает её обычным аксессуаром и НЕ тронет кружевные перчатки!
-            if (MainPlugin.ItemMappingTable.TryGetValue(nameLower, out int customSlotId))
-            {
-                if (customSlotId == 102 || customSlotId == 103)
-                {
-                    originalSavedType = __instance.slotType;
-                    activeItemComponent = __instance;
-                    wasModified = true;
-
-                    __instance.slotType = SlotType.none; // Временная мутация ассета
-                    Debug.Log($"[SWPT АНАТОМИЯ]: Маска/Кляп '{nameLower}' временно переведена в тип NONE для защиты перчаток!");
-                }
-            }
-        }
-
-        [HarmonyPostfix]
-        public static void Postfix()
-        {
-            // Как только метод Use() завершился и маска заспавнилась на тело,
-            // мгновенно возвращаем оригинальный тип, чтобы не ломать логику сохранений игры
-            if (wasModified && activeItemComponent != null)
-            {
-                activeItemComponent.slotType = originalSavedType;
-            }
-        }
-    }
-
 }
