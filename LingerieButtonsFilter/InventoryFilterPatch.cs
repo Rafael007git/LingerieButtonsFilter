@@ -36,6 +36,7 @@ namespace LingerieButtonsFilter
 
                 int state = (int)stateField.GetValue(__instance);
 
+                // Перехватываем рантайм на первом шаге генерации иконок
                 if (state == 1 && MainPlugin.FilterMode != 0 && originalItemsBackup == null)
                 {
                     if (Global.code?.playerLingerieStorage?.items?.items == null) return;
@@ -43,16 +44,6 @@ namespace LingerieButtonsFilter
 
                     originalItemsBackup = new List<Transform>(gameItemsList);
                     List<Transform> filteredItems = new List<Transform>();
-
-                    // Читаем обновленные массивы слов из конфигурации
-                    string[] kwAccessorie = ModConfig.KeywordsAccessorie.Value.Split(',');
-                    string[] kwHats = ModConfig.KeywordsHats.Value.Split(',');
-                    string[] kwEyes = ModConfig.KeywordsEyes.Value.Split(',');
-                    string[] kwMouth = ModConfig.KeywordsMouth.Value.Split(',');
-                    string[] kwEarrings = ModConfig.KeywordsEarrings.Value.Split(',');
-                    string[] kwWrists = ModConfig.KeywordsWrists.Value.Split(',');
-                    string[] kwNeck = ModConfig.KeywordsNeck.Value.Split(',');
-                    string[] kwNipples = ModConfig.KeywordsNipples.Value.Split(',');
 
                     foreach (Transform itemTransform in originalItemsBackup)
                     {
@@ -66,39 +57,40 @@ namespace LingerieButtonsFilter
                             string itemNameLower = itemTransform.name.ToLower();
 
                             // --- ЖЕЛЕЗНАЯ ЛОГИКА ТАБЛИЦЫ СООТВЕТСТВИЙ ---
-                            // 1. Если это стандартная вещь игры (лифчик, трусы и т.д.), мы её НЕ трогаем
+                            // 1. Стандартное белье игры (лифчики, трусики и т.д.) защищаем от любых изменений
                             bool isStandard = (slotType == SlotType.bra || slotType == SlotType.panties ||
                                                slotType == SlotType.stockings || slotType == SlotType.suspenders ||
                                                slotType == SlotType.heels);
 
                             if (!isStandard)
                             {
-                                // 2. Проверяем, записан ли этот предмет в нашем файле lingerie_mapping.txt
+                                // 2. Ищем предмет в текстовой базе данных Lingerie_Item_Mapping.txt
                                 if (MainPlugin.ItemMappingTable.TryGetValue(itemNameLower, out int customSlotId))
                                 {
-                                    slotTypeInt = customSlotId; // Перераспределяем в ваш точный слот!
+                                    slotTypeInt = customSlotId; // Успешно перераспределяем в ваш точный слот
                                 }
                                 else if (slotTypeInt < 100)
                                 {
-                                    // 3. Предмета нет в списке, и это чужой мод (ID меньше 100, например none=10 или gloves=9).
-                                    // Пускай падает в дефолтную категорию Accessorie (100), как вы и просили!
+                                    // 3. Если предмета нет в списке и это чужой старый мод (ID < 100, например none или gloves),
+                                    // насильно отправляем его в базовую категорию Accessorie (100)
                                     slotTypeInt = 100;
-                                }
+                                } // <-- Вот здесь должна быть просто ЧИСТАЯ скобка, без всяких "room"
                             }
 
-                            // Распределяем полученный ID по двум нашим физическим кнопкам на UI
+                            // --- РАСПРЕДЕЛЕНИЕ ПО ФИЗИЧЕСКИМ КНОПКАМ ИНТЕРФЕЙСА ---
                             if (MainPlugin.FilterMode == 1)
                             {
-                                // КНОПКА MASKS: Собираем всё, что на голове (101-104)
-                                if (slotTypeInt == 101 || slotTypeInt == 102 || slotTypeInt == 103 || slotTypeInt == 104 || slotTypeInt == 7)
+                                // КНОПКА MASKS: Собирает всё, что на голове (ID 101, 102, 103, 104) 
+                                // и оставляет оригинальный тип 7 (lingeriegloves), если он не был переназначен на тело
+                                if ((slotTypeInt >= 101 && slotTypeInt <= 104) || slotTypeInt == 7)
                                 {
                                     filteredItems.Add(itemTransform);
                                 }
                             }
                             else if (MainPlugin.FilterMode == 2)
                             {
-                                // КНОПКА OTHER: Собираем всё, что на теле (100, 111, 112, 113)
-                                if (slotTypeInt == 100 || slotTypeInt == 111 || slotTypeInt == 112 || slotTypeInt == 113)
+                                // КНОПКА OTHER: Собирает всё, что на теле (ID 100 — Accessorie, 111 — Wrists, 112 — Neck, 113 — Nipples)
+                                if (slotTypeInt == 100 || (slotTypeInt >= 111 && slotTypeInt <= 113))
                                 {
                                     filteredItems.Add(itemTransform);
                                 }
@@ -106,6 +98,7 @@ namespace LingerieButtonsFilter
                         }
                     }
 
+                    // Подменяем список игры на наш кастомный отфильтрованный набор
                     gameItemsList.Clear();
                     gameItemsList.AddRange(filteredItems);
                 }
@@ -159,12 +152,10 @@ namespace LingerieButtonsFilter
         {
             if (__exception != null)
             {
-                // Тихо говорим игре, что кнопка не нажата, и гасим ошибку
                 __result = false;
                 return null;
             }
             return null;
         }
     }
-
 }
