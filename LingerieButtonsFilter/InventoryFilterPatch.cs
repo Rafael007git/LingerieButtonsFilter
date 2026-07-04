@@ -136,44 +136,52 @@ namespace LingerieButtonsFilter
     }
 
     // ====================================================================
-    // ХИРУРГИЧЕСКИЙ ПАТЧ НА ИСПОЛЬЗОВАНИЕ ПРЕДМЕТА
-    // Подменяет типы в ассете СТРОГО в момент вызова метода Item.Use()
+    // БРОНЕБОЙНЫЙ ХИРУРГИЧЕСКИЙ ПАТЧ НА ИСПОЛЬЗОВАНИЕ ПРЕДМЕТА
+    // Перекрашивает типы ВСЕХ вещей в инвентаре на микросекунду клика,
+    // гарантируя, что игра корректно обнаружит и снимет старый предмет!
     // ====================================================================
     [HarmonyPatch(typeof(Item), "Use")]
     public class Item_Use_Patch
     {
-        private static SlotType originalSavedType;
-        private static bool wasModified = false;
-        private static Item activeItemComponent = null;
+        // Храним оригинальные типы всех измененных вещей, чтобы вернуть их в Postfix
+        private static Dictionary<Item, SlotType> backupTypes = new Dictionary<Item, SlotType>();
 
         [HarmonyPrefix]
-        public static void Prefix(Item __instance)
+        public static void Prefix()
         {
-            wasModified = false;
-            activeItemComponent = null;
+            backupTypes.Clear();
+            if (Global.code?.playerLingerieStorage?.items?.items == null) return;
 
-            if (__instance == null) return;
-
-            string nameLower = __instance.gameObject.name.ToLower().Replace("(clone)", "").Trim();
-
-            // Если вещь занесена в Блокнот маппинга, выдаем ей стандартный тип игры на время выполнения метода Use!
-            if (MainPlugin.ItemMappingTable.TryGetValue(nameLower, out int customSlotId))
+            // В момент клика мы переводим ВЕСЬ инвентарь игрока на стандартную карту слотов.
+            // Теперь игра при проверке конфликтов куклы железно увидит, что, например, 
+            // один пирсинг-shoes заменяет другой пирсинг-shoes!
+            foreach (Transform t in Global.code.playerLingerieStorage.items.items)
             {
-                originalSavedType = __instance.slotType;
-                activeItemComponent = __instance;
-                wasModified = true;
+                if (t == null) continue;
+                var itemComponent = t.GetComponent<Item>();
+                if (itemComponent == null) continue;
 
-                switch (customSlotId)
+                string nameLower = t.name.ToLower().Replace("(clone)", "").Trim();
+
+                if (MainPlugin.ItemMappingTable.TryGetValue(nameLower, out int customSlotId))
                 {
-                    case 101: __instance.slotType = SlotType.helmet; break;      // Hats -> Шлем (0)
-                    case 102: __instance.slotType = SlotType.none; break;        // Eyes (Маски) -> none (10)
-                    case 103: __instance.slotType = SlotType.gloves; break;      // Mouth (Кляпы) -> gloves (9)
-                    case 104: __instance.slotType = SlotType.necklace; break;    // Earrings -> necklace (4)
-                    case 111: __instance.slotType = SlotType.lingeriegloves; break; // Wrists -> lingeriegloves (16)
-                    case 112: __instance.slotType = SlotType.ring; break;        // Neck (Ошейники) -> ring (5)
-                    case 113: __instance.slotType = SlotType.shoes; break;       // Nipples (Пирсинги) -> shoes (6)
-                    default:
-                        wasModified = false; break;
+                    // Сохраняем оригинал, если еще не сохраняли
+                    if (!backupTypes.ContainsKey(itemComponent))
+                    {
+                        backupTypes.Add(itemComponent, itemComponent.slotType);
+                    }
+
+                    // На микросекунду подменяем типы на легальные игровые слоты
+                    switch (customSlotId)
+                    {
+                        case 101: itemComponent.slotType = SlotType.helmet; break;      // Hats -> Шлем (0)
+                        case 102: itemComponent.slotType = SlotType.none; break;        // Eyes (Маски) -> none (10)
+                        case 103: itemComponent.slotType = SlotType.gloves; break;      // Mouth (Кляпы) -> gloves (9)
+                        case 104: itemComponent.slotType = SlotType.necklace; break;    // Earrings -> necklace (4)
+                        case 111: itemComponent.slotType = SlotType.lingeriegloves; break; // Wrists -> lingeriegloves (16)
+                        case 112: itemComponent.slotType = SlotType.ring; break;        // Neck (Ошейники) -> ring (5)
+                        case 113: itemComponent.slotType = SlotType.shoes; break;       // Nipples (Пирсинги) -> shoes (6)
+                    }
                 }
             }
         }
@@ -181,13 +189,19 @@ namespace LingerieButtonsFilter
         [HarmonyPostfix]
         public static void Postfix()
         {
-            // Мгновенно возвращаем тип обратно сразу после того, как метод Use завершился!
-            if (wasModified && activeItemComponent != null)
+            // Как только метод Use() отработал, вещь наделась, а старая снялась — 
+            // мы МГНОВЕННО возвращаем всему инвентарю оригинальные чистые типы из ассетов!
+            foreach (var pair in backupTypes)
             {
-                activeItemComponent.slotType = originalSavedType;
+                if (pair.Key != null)
+                {
+                    pair.Key.slotType = pair.Value;
+                }
             }
+            backupTypes.Clear();
         }
     }
+
 
     // ЖЕЛЕЗНЫЙ ХАНИНГ-ЩИТ: Навсегда спасает Player.log от спама инпута
     [HarmonyPatch(typeof(PMC_Setting), "GetKeyDown")]
