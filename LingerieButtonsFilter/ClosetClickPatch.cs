@@ -7,46 +7,43 @@ using System.Collections.Generic;
 
 namespace LingerieButtonsFilter
 {
-    [HarmonyPatch]
+    // МЫ СНЯЛИ АВТО-АТРИБУТ: Теперь Harmony не тронет этот класс на старте игры!
     public class ClosetClickPatch
     {
-        // УЛЬТИМАТИВНЫЙ БРОНЕБОЙНЫЙ ПОИСК ЦЕЛИ:
-        // Перебирает вообще все классы во всей оперативной памяти игры.
-        // Найдёт класс InventoryClosetItem, даже если он зашит в хитрый Namespace!
-        [HarmonyTargetMethod]
-        public static MethodBase TargetMethod()
+        // Метод ручного наката патча, который мы вызовем в правильный момент
+        public static void ApplyManualPatch(Harmony harmonyInstance)
         {
             try
             {
                 foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
                 {
-                    // Защита от системных сборок Microsoft, которые нельзя сканировать
                     string asmName = assembly.GetName().Name;
                     if (asmName.StartsWith("System") || asmName.StartsWith("mscorlib") || asmName.StartsWith("Mono")) continue;
 
                     foreach (Type type in assembly.GetTypes())
                     {
-                        // Ищем класс, имя которого в точности совпадает с нашей целью в dnSpy!
                         if (type != null && type.Name == "InventoryClosetItem")
                         {
-                            MethodInfo method = type.GetMethod("ButtonTryOn", BindingFlags.Public | BindingFlags.Instance);
-                            if (method != null)
+                            MethodInfo originalMethod = type.GetMethod("ButtonTryOn", BindingFlags.Public | BindingFlags.Instance);
+                            MethodInfo prefixMethod = typeof(ClosetClickPatch).GetMethod("Prefix", BindingFlags.Static | BindingFlags.Public);
+
+                            if (originalMethod != null && prefixMethod != null)
                             {
-                                Debug.Log($"[SWPT АНАТОМИЯ]: Целевой метод {type.Name}.ButtonTryOn успешно обнаружен в рантайме!");
-                                return method;
+                                harmonyInstance.Patch(originalMethod, prefix: new HarmonyMethod(prefixMethod));
+                                Debug.Log("[SWPT АНАТОМИЯ]: ХИРУРГИЧЕСКИЙ ПАТЧ КЛИКА ШКАФА УСПЕШНО НАКАТАН НА ЛЕТУ!");
+                                return;
                             }
                         }
                     }
                 }
+                Debug.LogWarning("[SWPT АНАТОМИЯ]: Класс InventoryClosetItem пока не найден в памяти.");
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[SWPT КРИТ]: Ошибка сканирования типов в TargetMethod: {ex.Message}");
+                Debug.LogError($"[SWPT КРИТ]: Ошибка отложенного патчинга: {ex.Message}");
             }
-            return null;
         }
 
-        [HarmonyPrefix]
         public static bool Prefix(object __instance)
         {
             if (__instance == null) return true;
