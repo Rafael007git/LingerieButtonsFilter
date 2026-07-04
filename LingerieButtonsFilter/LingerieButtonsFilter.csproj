@@ -67,8 +67,10 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AnatomyManagerPatch.cs" />
     <Compile Include="InventoryFilterPatch.cs" />
     <Compile Include="InventoryUiController.cs" />
+    <Compile Include="LogShieldPatch.cs" />
     <Compile Include="MainPlugin.cs" />
     <Compile Include="ModConfig.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
