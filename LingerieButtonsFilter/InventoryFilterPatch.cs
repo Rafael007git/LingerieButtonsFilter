@@ -148,6 +148,55 @@ namespace LingerieButtonsFilter
                 catch (Exception ex) { Debug.LogError($"[SWPT Filter] Ошибка восстановления: {ex.Message}"); }
             }
         }
+
+        // УЛЬТИМАТИВНЫЙ ХИРУРГИЧЕСКИЙ ПАТЧ НА КЛИК: 
+        // Ловит момент, когда игрок кликает по вещи в инвентаре, чтобы надеть её!
+        [HarmonyPatch(typeof(UIInventory), "ClickLingerie")] // Стандартное имя метода в SWPT
+        [HarmonyPrefix]
+        public static void ClickLingeriePrefix(Transform itemTransform)
+        {
+            if (itemTransform == null) return;
+            var itemComponent = itemTransform.GetComponent<Item>();
+            if (itemComponent == null) return;
+
+            string itemNameLower = itemTransform.name.ToLower().Replace("(clone)", "").Trim();
+
+            // Если эта маска записана в нашем Блокноте как Eyes или Mouth — 
+            // мы временно ПЕРЕЗАПИСЫВАЕМ тип прямо перед тем, как игра начнет её надевать!
+            if (MainPlugin.ItemMappingTable.TryGetValue(itemNameLower, out int customSlotId))
+            {
+                itemComponent.slotType = (SlotType)customSlotId;
+            }
+        }
+
+        [HarmonyPatch(typeof(UIInventory), "ClickLingerie")]
+        [HarmonyPostfix]
+        public static void ClickLingeriePostfix(Transform itemTransform)
+        {
+            // Сразу после того, как игра надела предмет, мы возвращаем его оригинальный тип,
+            // чтобы не сломать стандартную систему хранения и сброса вещей игры!
+            if (itemTransform == null) return;
+            var itemComponent = itemTransform.GetComponent<Item>();
+            if (itemComponent != null)
+            {
+                // Если вещь была маской (7), но мы её временно меняли — возвращаем её законный тип 7
+                string itemNameLower = itemTransform.name.ToLower().Replace("(clone)", "").Trim();
+                if (MainPlugin.ItemMappingTable.ContainsKey(itemNameLower))
+                {
+                    // Если это была маска, возвращаем ей тип 7 (Lingeriegloves), 
+                    // чтобы при снятии она знала, куда возвращаться.
+                    if (itemNameLower.Contains("mask") || itemNameLower.Contains("gag"))
+                    {
+                        itemComponent.slotType = SlotType.lingeriegloves;
+                    }
+                    else
+                    {
+                        itemComponent.slotType = SlotType.none;
+                    }
+                }
+            }
+        }
+
     }
 
     // ЖЕЛЕЗНЫЙ ХАНИНГ-ЩИТ: Навсегда спасает Player.log и процессор от багов игры с инпутом
