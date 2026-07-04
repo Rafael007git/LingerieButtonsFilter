@@ -145,44 +145,60 @@ namespace LingerieButtonsFilter
     }
 
     // ====================================================================
-    // ВИРТУАЛЬНЫЙ АНАТОМИЧЕСКИЙ ДИСПЕТЧЕР (КЛИК СЦЕНАРИЙ "С")
-    // Перехватывает точечный метод Item.Use() в момент клика по предмету.
-    // Находит старую надеваную вещь той же категории и заставляет ее СНЯТЬ СЕБЯ САМУ повторным вызовом Use()!
+    // ДИАГНОСТИЧЕСКИЙ АНАТОМИЧЕСКИЙ ДИСПЕТЧЕР
+    // Выводит в консоль BepInEx каждый чих рантайма при попытке надеть вещь!
     // ====================================================================
     [HarmonyPatch(typeof(Item), "Use")]
     public class Item_Use_Patch
     {
-        // ПЕРЕНЕСЛИ СЮДА: Теперь переменная видна внутри этого контекста!
         private static bool isProcessingCustomEquip = false;
 
         [HarmonyPrefix]
-        public static bool Prefix(Item __instance, CharacterCustomization _customization)
+        public static bool Prefix(Item __instance)
         {
-            // Если этот вызов инициирован нашим же модом для снятия старой вещи — 
-            // мы просто пропускаем его, позволяя игре честно снять предмет!
-            if (isProcessingCustomEquip) return true;
-
             if (__instance == null) return true;
 
-            string newItemName = __instance.gameObject.name.ToLower().Replace("(clone)", "").Trim();
+            // Логируем ЛЮБОЙ факт вызова метода Use, чтобы проверить, реагирует ли игра на клики!
+            Debug.Log($"[SWPT ДЕБАГ]: Вызван Item.Use() для предмета '{__instance.gameObject.name}'. Предохранитель рекурсии={isProcessingCustomEquip}");
 
-            // 1. Проверяем, занесен ли КЛИКНУТЫЙ предмет в наш Блокнот маппинга
-            if (MainPlugin.ItemMappingTable.TryGetValue(newItemName, out int newCategory))
+            if (isProcessingCustomEquip) return true;
+
+            try
             {
-                // Accessories (100) пропускаем — пусть платья и портупеи надеваются свободно
-                if (newCategory == 100) return true;
+                string newItemName = __instance.gameObject.name.ToLower().Replace("(clone)", "").Trim();
 
-                // Проверяем, надета ли вещь СЕЙЧАС (В игре надетые вещи проверяются по наличию их 3D-модели на кукле,
-                // либо по внутренним галочкам. Но самый надежный способ — спросить у менеджера шкафа/персонажа, 
-                // либо проверить, включен ли визуальный объект на кукле.
-                // Чтобы не гадать, мы просто смотрим: если игрок кликнул по УЖЕ НАДЕТОЙ вещи — он хочет её снять.
-                // В таком случае мы ничего не вытесняем и отдаем управление игре!
-                CharacterCustomization cc = _customization ?? GameObject.FindObjectOfType<CharacterCustomization>();
-
-                // Проверяем глубоким поиском, горит ли уже моделька этой НОВОЙ вещи на персонаже?
-                bool isNewItemAlreadyWorn = false;
-                if (cc != null)
+                // 1. Проверяем, занесен ли кликнутый предмет в наш Блокнот
+                if (MainPlugin.ItemMappingTable.TryGetValue(newItemName, out int newCategory))
                 {
+                    Debug.Log($" -> [SWPT ДЕБАГ]: Предмет '{__instance.gameObject.name}' найден в Блокноте! Категория = {newCategory}");
+
+                    if (newCategory == 100)
+                    {
+                        Debug.Log(" -> [SWPT ДЕБАГ]: Это общие Accessories (100). Пропускаем авто-снятие.");
+                        return true;
+                    }
+
+                    // 2. Ищем куклу персонажа
+                    CharacterCustomization cc = null;
+                    if (Global.code?.uiCloset?.curcustomization != null)
+                    {
+                        cc = Global.code.uiCloset.curcustomization;
+                        Debug.Log($" -> [SWPT ДЕБАГ]: Кукла успешно найдена через uiCloset! Имя объекта куклы: {cc.gameObject.name}");
+                    }
+                    if (cc == null)
+                    {
+                        cc = GameObject.FindObjectOfType<CharacterCustomization>();
+                        if (cc != null) Debug.Log($" -> [SWPT ДЕБАГ]: Кукла найдена через FindObjectOfType! Имя: {cc.gameObject.name}");
+                    }
+
+                    if (cc == null)
+                    {
+                        Debug.LogError(" -> [SWPT ОШИБКА]: Кукла CharacterCustomization ВООБЩЕ НЕ НАЙДЕНА на сцене!");
+                        return true;
+                    }
+
+                    // 3. Проверяем, надета ли эта вещь прямо сейчас
+                    bool isNewItemAlreadyWorn = false;
                     foreach (Transform child in cc.GetComponentsInChildren<Transform>(true))
                     {
                         if (child.name.ToLower().Replace("(clone)", "").Trim() == newItemName && child.gameObject.activeSelf)
@@ -191,66 +207,78 @@ namespace LingerieButtonsFilter
                             break;
                         }
                     }
-                }
 
-                if (isNewItemAlreadyWorn) return true; // Игрок кликнул по надетому пирсингу -> игра его снимет сама
+                    Debug.Log($" -> [SWPT ДЕБАГ]: Статус новой вещи '{__instance.gameObject.name}' на кукле: Уже надета? = {isNewItemAlreadyWorn}");
+                    if (isNewItemAlreadyWorn) return true; // Игрок снимает вещь вручную
 
-                // 2. ИГРОК НАДЕВАЕТ НОВУЮ ВЕЩЬ! Ищем в сундуке старую вещь этой же анатомической категории
-                if (Global.code?.playerLingerieStorage?.items?.items == null || cc == null) return true;
-
-                Item itemToTakeOff = null;
-
-                foreach (Transform t in Global.code.playerLingerieStorage.items.items)
-                {
-                    if (t == null || t.gameObject.name.ToLower().Replace("(clone)", "").Trim() == newItemName) continue;
-
-                    string checkedName = t.gameObject.name.ToLower().Replace("(clone)", "").Trim();
-
-                    // Проверяем, относится ли эта вещь со склада к нашей категории?
-                    if (MainPlugin.ItemMappingTable.TryGetValue(checkedName, out int wornCategory))
+                    // 4. Ищем старую вещь этой же категории на кукле
+                    if (Global.code?.playerLingerieStorage?.items?.items == null)
                     {
-                        if (wornCategory == newCategory)
+                        Debug.LogWarning(" -> [SWPT ДЕБАГ]: playerLingerieStorage.items.items равен null!");
+                        return true;
+                    }
+
+                    Debug.Log($" -> [SWPT ДЕБАГ]: Начинаем сканировать сундук (всего вещей: {Global.code.playerLingerieStorage.items.items.Count}) в поисках старой вещи категории {newCategory}...");
+                    Item itemToTakeOff = null;
+
+                    foreach (Transform t in Global.code.playerLingerieStorage.items.items)
+                    {
+                        if (t == null) continue;
+                        string checkedName = t.gameObject.name.ToLower().Replace("(clone)", "").Trim();
+                        if (checkedName == newItemName) continue;
+
+                        if (MainPlugin.ItemMappingTable.TryGetValue(checkedName, out int wornCategory))
                         {
-                            // Нашли вещь из этой же категории в сундуке. Проверяем, горит ли её моделька на теле девушки?
-                            foreach (Transform child in cc.GetComponentsInChildren<Transform>(true))
+                            if (wornCategory == newCategory)
                             {
-                                if (child.name.ToLower().Replace("(clone)", "").Trim() == checkedName && child.gameObject.activeSelf)
+                                // Нашли потенциального кандидата на складе, проверяем, горит ли его моделька на кукле?
+                                bool isVisualActive = false;
+                                foreach (Transform child in cc.GetComponentsInChildren<Transform>(true))
                                 {
-                                    itemToTakeOff = t.GetComponent<Item>();
-                                    break;
+                                    if (child.name.ToLower().Replace("(clone)", "").Trim() == checkedName && child.gameObject.activeSelf)
+                                    {
+                                        isVisualActive = true;
+                                        itemToTakeOff = t.GetComponent<Item>();
+                                        break;
+                                    }
                                 }
+                                Debug.Log($"   -> Найдена вещь той же категории: '{t.gameObject.name}'. Активна на кукле? = {isVisualActive}");
                             }
                         }
+                        if (itemToTakeOff != null) break;
                     }
-                    if (itemToTakeOff != null) break;
-                }
 
-                // 3. СИМУЛЯЦИЯ ПОВТОРНОГО КЛИКА: Если нашли старую надетую вещь, заставляем её СНЯТЬ СЕБЯ!
-                if (itemToTakeOff != null)
-                {
-                    try
+                    // 5. Инициируем авто-снятие
+                    if (itemToTakeOff != null)
                     {
-                        Debug.Log($"[SWPT АНАТОМИЯ]: Категория {newCategory} занята предметом '{itemToTakeOff.gameObject.name}'. Инициируем виртуальный повторный клик для авто-снятия...");
+                        Debug.Log($"[SWPT АНАТОМИЯ]: Найдена старая надетая вещь '{itemToTakeOff.gameObject.name}' в категории {newCategory}. Запускаем виртуальный клик снятия...");
 
                         isProcessingCustomEquip = true;
-
-                        // Вызываем родной метод Use() старой вещи! Игра сама идеально уберет графику,
-                        // погасит галочку и обновит списки инвентаря без единого бага.
                         itemToTakeOff.Use(cc);
+                        isProcessingCustomEquip = false;
 
-                        isProcessingCustomEquip = false;
+                        Debug.Log("[SWPT АНАТОМИЯ]: Виртуальный клик снятия успешно завершен!");
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        isProcessingCustomEquip = false;
-                        Debug.LogError($" Ошибка симуляции снятия: {ex.Message}");
+                        Debug.Log($" -> [SWPT ДЕБАГ]: В категории {newCategory} на кукле сейчас ничего не надето. Чистая установка!");
                     }
                 }
+                else
+                {
+                    Debug.Log($" -> [SWPT ДЕБАГ]: Предмет '{__instance.gameObject.name}' отсутствует в Блокноте маппинга. Игнорируем.");
+                }
+            }
+            catch (Exception ex)
+            {
+                isProcessingCustomEquip = false;
+                Debug.LogError($"[SWPT КРИТ ОШИБКА] Сбой в дебаг-патче: {ex.Message}\n{ex.StackTrace}");
             }
 
-            return true; // Возвращаем true, давая игре штатно надеть наш новый предмет на пустое место!
+            return true;
         }
     }
+
 
     // ЖЕЛЕЗНЫЙ ХАНИНГ-ЩИТ: Навсегда спасает Player.log от спама инпута
     [HarmonyPatch(typeof(PMC_Setting), "GetKeyDown")]
