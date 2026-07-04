@@ -115,7 +115,7 @@ namespace LingerieButtonsFilter
                     }
 
                     // ----------------====================================================
-                    // ШАГ 2: ФИЛЬТРАЦИЯ ПРЕДМЕТОВ ПО КНОПКАМ UI
+                    // ШАГ 2: ЭТАЛОННАЯ ДВУХЭТАПНАЯ ФИЛЬТРАЦИЯ UI ПО ЛОКАЛЬНОЙ ТАБЛИЦЕ
                     // ----------------====================================================
                     foreach (Transform itemTransform in originalItemsBackup)
                     {
@@ -127,10 +127,18 @@ namespace LingerieButtonsFilter
                             int slotTypeInt = (int)itemComponent.slotType;
                             string itemNameLower = itemTransform.name.ToLower().Replace("(clone)", "").Trim();
 
-                            // Фильтруем UI строго по Contains из нашего Блокнота
-                            int uiCategory = 100;
+                            // ЭТАП 1: Проверяем, защищено ли это белье стандартными флагами игры
+                            bool isStandard = (itemComponent.slotType == SlotType.bra ||
+                                               itemComponent.slotType == SlotType.panties ||
+                                               itemComponent.slotType == SlotType.stockings ||
+                                               itemComponent.slotType == SlotType.suspenders ||
+                                               itemComponent.slotType == SlotType.heels);
+
+                            // ЭТАП 2: Включаем текстовый маппинг только для кастомных аксессуаров мододелов!
+                            int uiCategory = -1;
                             bool foundInMap = false;
-                            foreach (var pair in MainPlugin.ItemMappingTable)
+
+                            foreach (var pair in localMappingTable)
                             {
                                 if (itemNameLower.Contains(pair.Key))
                                 {
@@ -142,15 +150,23 @@ namespace LingerieButtonsFilter
 
                             if (foundInMap)
                             {
+                                // Нашли точное совпадение в Блокноте (улетает в Masks или специфический Other)
                                 slotTypeInt = uiCategory;
                             }
-                            else if (slotTypeInt < 100)
+                            else if (!isStandard)
                             {
+                                // Вещи НЕТ в блокноте, и это НЕ стандартная вещь игры (чужой неопознанный мод).
+                                // Вот только ОНА имеет право упасть в общую категорию Accessories (100)!
                                 slotTypeInt = 100;
                             }
+                            // Если вещь стандартная (лифчик/трусы) и её нет в Блокноте - мы её НЕ трогаем.
+                            // Она сохраняет свой родной slotTypeInt (11, 12, 13...) и НЕ падает в Others!
 
+                            // --- СТРОГОЕ РАСПРЕДЕЛЕНИЕ ПО ФИЗИЧЕСКИМ КНОПКАМ UI ---
                             if (MainPlugin.FilterMode == 1)
                             {
+                                // КНОПКА MASKS: Собирает только Hats (101), Eyes (102), Mouth (103), Earrings (104)
+                                // И оставляет родные перчатки мода (7), если их нет в блокноте
                                 if ((slotTypeInt >= 101 && slotTypeInt <= 104) || slotTypeInt == 7)
                                 {
                                     filteredItems.Add(itemTransform);
@@ -158,6 +174,8 @@ namespace LingerieButtonsFilter
                             }
                             else if (MainPlugin.FilterMode == 2)
                             {
+                                // КНОПКА OTHER: Собирает СТРОГО Accessories (100), Wrists (111), Neck (112), Nipples (113)
+                                // Стандартные лифчики (11) или трусики (12) сюда теперь физически НЕ ПРОЛЕЗУТ!
                                 if (slotTypeInt == 100 || (slotTypeInt >= 111 && slotTypeInt <= 113))
                                 {
                                     filteredItems.Add(itemTransform);
@@ -165,6 +183,7 @@ namespace LingerieButtonsFilter
                             }
                         }
                     }
+
 
                     gameItemsList.Clear();
                     gameItemsList.AddRange(filteredItems);
