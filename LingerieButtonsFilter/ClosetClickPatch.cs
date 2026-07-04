@@ -10,18 +10,38 @@ namespace LingerieButtonsFilter
     [HarmonyPatch]
     public class ClosetClickPatch
     {
-        // ДИНАМИЧЕСКИЙ ПОИСК ЦЕЛИ: Находит скрытый класс InventoryClosetItem в памяти игры при старте,
-        // полностью избавляя проект от ошибок отсутствия DLL в References!
+        // УЛЬТИМАТИВНЫЙ БРОНЕБОЙНЫЙ ПОИСК ЦЕЛИ:
+        // Перебирает вообще все классы во всей оперативной памяти игры.
+        // Найдёт класс InventoryClosetItem, даже если он зашит в хитрый Namespace!
         [HarmonyTargetMethod]
         public static MethodBase TargetMethod()
         {
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            try
             {
-                Type targetType = assembly.GetType("InventoryClosetItem");
-                if (targetType != null)
+                foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
                 {
-                    return targetType.GetMethod("ButtonTryOn", BindingFlags.Public | BindingFlags.Instance);
+                    // Защита от системных сборок Microsoft, которые нельзя сканировать
+                    string asmName = assembly.GetName().Name;
+                    if (asmName.StartsWith("System") || asmName.StartsWith("mscorlib") || asmName.StartsWith("Mono")) continue;
+
+                    foreach (Type type in assembly.GetTypes())
+                    {
+                        // Ищем класс, имя которого в точности совпадает с нашей целью в dnSpy!
+                        if (type != null && type.Name == "InventoryClosetItem")
+                        {
+                            MethodInfo method = type.GetMethod("ButtonTryOn", BindingFlags.Public | BindingFlags.Instance);
+                            if (method != null)
+                            {
+                                Debug.Log($"[SWPT АНАТОМИЯ]: Целевой метод {type.Name}.ButtonTryOn успешно обнаружен в рантайме!");
+                                return method;
+                            }
+                        }
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[SWPT КРИТ]: Ошибка сканирования типов в TargetMethod: {ex.Message}");
             }
             return null;
         }
@@ -89,14 +109,22 @@ namespace LingerieButtonsFilter
                         if (child == null || !child.gameObject.activeSelf) continue;
                         string childName = child.name.ToLower().Replace("(clone)", "").Trim();
 
-                        if (clickMapTable.TryGetValue(childName, out int wornCategoryId))
+                        // Проверяем старую модельку по Блокноту (используем Contains для железной надежности)
+                        int wornCategoryId = -1;
+                        foreach (var pair in clickMapTable)
                         {
-                            if (wornCategoryId == customCategoryId && childName != itemNameLower)
+                            if (childName.Contains(pair.Key))
                             {
-                                Debug.Log($"[SWPT ШКАФ]: Вытеснение! Насильно удаляем старую модель '{child.name}' из категории {customCategoryId}...");
-                                child.gameObject.SetActive(false);
-                                GameObject.Destroy(child.gameObject);
+                                wornCategoryId = pair.Value;
+                                break;
                             }
+                        }
+
+                        if (wornCategoryId == customCategoryId && childName != itemNameLower)
+                        {
+                            Debug.Log($"[SWPT ШКАФ]: Вытеснение! Насильно удаляем старую модель '{child.name}' из категории {customCategoryId}...");
+                            child.gameObject.SetActive(false);
+                            GameObject.Destroy(child.gameObject);
                         }
                     }
 
@@ -112,7 +140,6 @@ namespace LingerieButtonsFilter
                     }
 
                     // Обновляем интерфейс шкафа стандартными командами игры.
-                    // Игра сама проиграет нужные звуки внутри этих вызовов!
                     Global.code?.uiInventory?.ButtonUnderwearGroup();
                     Global.code?.uiInventory?.RefreshEquipment();
 
