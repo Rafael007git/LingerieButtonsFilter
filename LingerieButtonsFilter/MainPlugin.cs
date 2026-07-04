@@ -56,24 +56,27 @@ namespace LingerieButtonsFilter
             }
             catch (Exception ex) { Logger.LogError($"Ошибка точечного шпиона: {ex.Message}"); }
 
-            // БРОНЕБОЙНЫЙ МНОГОСТУПЕНЧАТЫЙ РАДАР ИНИЦИАЛИЗАЦИИ
+            // ПОДПИСКА НА СЦЕНЫ (Чистый, исправленный вариант без ошибок массивов)
             UnityEngine.SceneManagement.SceneManager.sceneLoaded += (scene, mode) =>
             {
                 IsUiCustomized = false;
 
-                // Создаем Harmony-инстанс для ручного наката
-                var manualHarmony = new Harmony("com.yourname.swpt.closetclick");
+                // Находим массив всех объектов UIInventory на сцене
+                UIInventory[] foundInventories = Resources.FindObjectsOfTypeAll<UIInventory>();
 
-                // Попытка 1: Пробуем накатить сразу при загрузке сцены
-                ClosetClickPatch.ApplyManualPatch(manualHarmony);
+                // Если массив не пустой — берем самый первый [0] элемент!
+                UIInventory uiInventory = (foundInventories != null && foundInventories.Length > 0)
+                    ? foundInventories[0]
+                    : null;
 
-                // Попытка 2: Вешаем скрытый триггер на событие обновления интерфейса!
-                // Каждый раз, когда игра будет перерисовывать гардероб или вы будете кликать по кнопкам фильтра,
-                // наш плагин будет тихонько проверять память, пока класс наконец не появится!
-                MainPlugin.FilterModeChanged += () =>
+                if (uiInventory != null)
                 {
-                    ClosetClickPatch.ApplyManualPatch(manualHarmony);
-                };
+                    Transform cat2 = uiInventory.transform.Find("Right/Lingerie Group/Category (2)");
+                    if (cat2 != null && cat2.gameObject.GetComponent<InventoryUiController>() == null)
+                    {
+                        cat2.gameObject.AddComponent<InventoryUiController>();
+                    }
+                }
             };
 
 

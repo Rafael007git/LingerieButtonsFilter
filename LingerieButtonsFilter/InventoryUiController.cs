@@ -59,7 +59,6 @@ namespace LingerieButtonsFilter
                     maskBtn.onClick.RemoveAllListeners();
                     maskBtn.onClick.AddListener(() => {
                         MainPlugin.FilterMode = 1;
-                        MainPlugin.FilterModeChanged?.Invoke(); // <--- НАШ ТРИГГЕР-РАДАР
                         TriggerGameRefresh();
                     });
                 }
@@ -86,7 +85,6 @@ namespace LingerieButtonsFilter
                     // ДОБАВИЛИ ВЫЗОВ ТРИГГЕРА ДЛЯ OTHER СЮДА:
                     otherBtn.onClick.AddListener(() => {
                         MainPlugin.FilterMode = 2;
-                        MainPlugin.FilterModeChanged?.Invoke(); // <--- НАШ ТРИГГЕР-РАДАР
                         TriggerGameRefresh();
                     });
                 }
