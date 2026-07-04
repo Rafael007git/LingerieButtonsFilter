@@ -103,13 +103,8 @@ namespace LingerieButtonsFilter
         {
             try
             {
-                // ИСПОЛЬЗУЕМ 100% НАДЕЖНЫЙ ПУТЬ: Танцуем от папки самого плагина
-                // Переходим в BepInEx/config/ через поднятие на уровень вверх из папки plugins
-                string pluginsFolder = Path.GetDirectoryName(Info.Location); // BepInEx/plugins/LingerieButtonsFilter
-                string bstFolder = Path.GetDirectoryName(pluginsFolder);    // BepInEx/plugins
-                string bepinexRoot = Path.GetDirectoryName(bstFolder);       // BepInEx
-
-                string configFolder = Path.Combine(bepinexRoot, "config");
+                // ЖЕЛЕЗНЫЙ ПУТЬ BEPINEX: Прямое попадание в настоящую папку BepInEx\config
+                string configFolder = BepInEx.Paths.ConfigPath;
                 string filePath = Path.Combine(configFolder, "Lingerie_Item_Mapping.txt");
 
                 Logger.LogInfo($"[SWPT] Проверяем путь маппинга: {filePath}");
@@ -150,7 +145,7 @@ namespace LingerieButtonsFilter
                     {
                         // ЖЕСТКИЕ ИНДЕКСЫ МАССИВА: [0] — левая часть, [1] — правая часть
                         string itemName = parts[0].Trim().ToLower();
-                        string typeStr = parts[1].Trim();
+                        string typeStr = parts[1].Trim().ToLower();
 
                         int targetSlotId = 100; // По умолчанию Accessorie
 
