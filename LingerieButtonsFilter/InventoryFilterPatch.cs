@@ -36,7 +36,6 @@ namespace LingerieButtonsFilter
 
                 int state = (int)stateField.GetValue(__instance);
 
-                // Перехватываем рантайм на первом шаге генерации иконок
                 if (state == 1 && MainPlugin.FilterMode != 0 && originalItemsBackup == null)
                 {
                     if (Global.code?.playerLingerieStorage?.items?.items == null) return;
@@ -52,10 +51,9 @@ namespace LingerieButtonsFilter
                         var itemComponent = itemTransform.GetComponent<Item>();
                         if (itemComponent != null)
                         {
+                            int slotTypeInt = (int)itemComponent.slotType;
                             string itemNameLower = itemTransform.name.ToLower().Replace("(clone)", "").Trim();
 
-                            // --- ЖЕЛЕЗНАЯ ЛОГИКА ТАБЛИЦЫ СООТВЕТСТВИЙ ---
-                            // 1. Стандартное белье игры (лифчики, трусики и т.д.) защищаем от любых изменений
                             bool isStandard = (itemComponent.slotType == SlotType.bra ||
                                                itemComponent.slotType == SlotType.panties ||
                                                itemComponent.slotType == SlotType.stockings ||
@@ -64,39 +62,66 @@ namespace LingerieButtonsFilter
 
                             if (!isStandard)
                             {
-                                // 2. Ищем предмет в нашей текстовой базе данных Lingerie_Item_Mapping.txt
+                                // Ищем предмет в нашей текстовой базе данных Lingerie_Item_Mapping.txt
                                 if (MainPlugin.ItemMappingTable.TryGetValue(itemNameLower, out int customSlotId))
                                 {
-                                    // НАСИЛЬНО ПЕРЕЗАПИСЫВАЕМ ТИП В КОМПОНЕНТЕ ИГРЫ!
-                                    // Теперь игра физически запомнит, что этот предмет имеет тип 101-113, 
-                                    // и не будет конфликтовать при надевании!
-                                    itemComponent.slotType = (SlotType)customSlotId;
+                                    slotTypeInt = customSlotId;
+
+                                    // ====================================================================
+                                    // УЛЬТИМАТИВНЫЙ АНАТОМИЧЕСКИЙ МАКРО-МАППИНГ:
+                                    // Мы изолируем ТОЛЬКО специфические категории, выдавая им жесткие скрытые слоты,
+                                    // чтобы они гарантированно не воевали с перчатками и платьями.
+                                    // А категорию Accessories (100) мы ВООБЩЕ НЕ ТРОГАЕМ — игра сама отдаст ей 
+                                    // ВСЕ оставшиеся свободные слоты куклы misc1-misc8!
+                                    // ====================================================================
+
+                                    switch (customSlotId)
+                                    {
+                                        case 101: // Hats -> Отправляем в выделенный слот misc2 (18)
+                                            itemComponent.slotType = (SlotType)18; break;
+                                        case 102: // Eyes (Маски) -> Отправляем в выделенный слот misc3 (19) (Спасаем перчатки!)
+                                            itemComponent.slotType = (SlotType)19; break;
+                                        case 103: // Mouth (Кляпы) -> Отправляем в выделенный слот misc4 (20)
+                                            itemComponent.slotType = (SlotType)20; break;
+                                        case 104: // Earrings -> Отправляем в выделенный слот misc5 (21)
+                                            itemComponent.slotType = (SlotType)21; break;
+                                        case 111: // Wrists -> Отправляем в выделенный слот misc6 (22)
+                                            itemComponent.slotType = (SlotType)22; break;
+                                        case 112: // Neck (Ошейники) -> Отправляем в выделенный слот misc7 (23)
+                                            itemComponent.slotType = (SlotType)23; break;
+                                        case 113: // Nipples -> Отправляем в выделенный слот misc8 (24)
+                                            itemComponent.slotType = (SlotType)24; break;
+
+                                        case 100: // Accessories -> Специально пропускаем! 
+                                        default:
+                                            // Ничего не меняем в компоненте игры. Вещь сохраняет свой тип none/misc,
+                                            // и движок игры сам красиво распределит её по оставшемуся пулу слотов!
+                                            break;
+                                    }
                                 }
-                                else if ((int)itemComponent.slotType < 100)
+                                else if (slotTypeInt < 100)
                                 {
-                                    // 3. Если предмета нет в списке и это чужой старый неопознанный мод,
-                                    // принудительно делаем его Accessorie (100) на уровне компонента!
-                                    itemComponent.slotType = (SlotType)100;
+                                    // Если вещи нет в блокноте, она по умолчанию считается общим аксессуаром.
+                                    // Мы просто переводим её маркер для UI-кнопки в 100, но код игры НЕ трогаем!
+                                    slotTypeInt = 100;
                                 }
                             }
 
-                            // Считываем уже обновленный, железно прописанный тип для фильтрации кнопок
-                            int finalSlotId = (int)itemComponent.slotType;
 
                             // --- РАСПРЕДЕЛЕНИЕ ПО ФИЗИЧЕСКИМ КНОПКАМ ИНТЕРФЕЙСА ---
                             if (MainPlugin.FilterMode == 1)
                             {
-                                // КНОПКА MASKS: Собирает всё, что на голове (ID 101 — Hats, 102 — Eyes, 103 — Mouth, 104 — Earrings)
-                                // И родной тип 7 (lingeriegloves), если вы его вручную не переписали на тело
-                                if ((finalSlotId >= 101 && finalSlotId <= 104) || finalSlotId == 7)
+                                // КНОПКА MASKS: Собирает Hats (101), Eyes (102), Mouth (103), Earrings (104)
+                                // И оставляем родной тип 7 (перчатки), если вы его не переназначили
+                                if ((slotTypeInt >= 101 && slotTypeInt <= 104) || slotTypeInt == 7)
                                 {
                                     filteredItems.Add(itemTransform);
                                 }
                             }
                             else if (MainPlugin.FilterMode == 2)
                             {
-                                // КНОПКА OTHER: Собирает всё, что на теле (ID 100 — Accessorie, 111 — Wrists, 112 — Neck, 113 — Nipples)
-                                if (finalSlotId == 100 || (finalSlotId >= 111 && finalSlotId <= 113))
+                                // КНОПКА OTHER: Собирает Accessorie (100), Wrists (111), Neck (112), Nipples (113)
+                                if (slotTypeInt == 100 || (slotTypeInt >= 111 && slotTypeInt <= 113))
                                 {
                                     filteredItems.Add(itemTransform);
                                 }
@@ -104,14 +129,12 @@ namespace LingerieButtonsFilter
                         }
                     }
 
-                    // Подменяем список игры на наш кастомный отфильтрованный набор
                     gameItemsList.Clear();
                     gameItemsList.AddRange(filteredItems);
                 }
             }
             catch (Exception ex) { Debug.LogError($"[SWPT Filter] Ошибка Prefix: {ex.Message}"); }
         }
-
 
         [HarmonyPostfix]
         public static void Postfix(object __instance, ref bool __result)
@@ -148,55 +171,6 @@ namespace LingerieButtonsFilter
                 catch (Exception ex) { Debug.LogError($"[SWPT Filter] Ошибка восстановления: {ex.Message}"); }
             }
         }
-
-        // УЛЬТИМАТИВНЫЙ ХИРУРГИЧЕСКИЙ ПАТЧ НА КЛИК: 
-        // Ловит момент, когда игрок кликает по вещи в инвентаре, чтобы надеть её!
-        [HarmonyPatch(typeof(UIInventory), "ClickLingerie")] // Стандартное имя метода в SWPT
-        [HarmonyPrefix]
-        public static void ClickLingeriePrefix(Transform itemTransform)
-        {
-            if (itemTransform == null) return;
-            var itemComponent = itemTransform.GetComponent<Item>();
-            if (itemComponent == null) return;
-
-            string itemNameLower = itemTransform.name.ToLower().Replace("(clone)", "").Trim();
-
-            // Если эта маска записана в нашем Блокноте как Eyes или Mouth — 
-            // мы временно ПЕРЕЗАПИСЫВАЕМ тип прямо перед тем, как игра начнет её надевать!
-            if (MainPlugin.ItemMappingTable.TryGetValue(itemNameLower, out int customSlotId))
-            {
-                itemComponent.slotType = (SlotType)customSlotId;
-            }
-        }
-
-        [HarmonyPatch(typeof(UIInventory), "ClickLingerie")]
-        [HarmonyPostfix]
-        public static void ClickLingeriePostfix(Transform itemTransform)
-        {
-            // Сразу после того, как игра надела предмет, мы возвращаем его оригинальный тип,
-            // чтобы не сломать стандартную систему хранения и сброса вещей игры!
-            if (itemTransform == null) return;
-            var itemComponent = itemTransform.GetComponent<Item>();
-            if (itemComponent != null)
-            {
-                // Если вещь была маской (7), но мы её временно меняли — возвращаем её законный тип 7
-                string itemNameLower = itemTransform.name.ToLower().Replace("(clone)", "").Trim();
-                if (MainPlugin.ItemMappingTable.ContainsKey(itemNameLower))
-                {
-                    // Если это была маска, возвращаем ей тип 7 (Lingeriegloves), 
-                    // чтобы при снятии она знала, куда возвращаться.
-                    if (itemNameLower.Contains("mask") || itemNameLower.Contains("gag"))
-                    {
-                        itemComponent.slotType = SlotType.lingeriegloves;
-                    }
-                    else
-                    {
-                        itemComponent.slotType = SlotType.none;
-                    }
-                }
-            }
-        }
-
     }
 
     // ЖЕЛЕЗНЫЙ ХАНИНГ-ЩИТ: Навсегда спасает Player.log и процессор от багов игры с инпутом
