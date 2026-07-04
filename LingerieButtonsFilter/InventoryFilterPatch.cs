@@ -48,7 +48,7 @@ namespace LingerieButtonsFilter
                     originalItemsBackup = new List<Transform>(gameItemsList);
                     List<Transform> filteredItems = new List<Transform>();
 
-                    // ЗАГРУЗКА БЛОКНОТА
+                    // 1. АВТО-ЗАГРУЗКА БЛОКНОТА
                     Dictionary<string, int> localMappingTable = new Dictionary<string, int>();
                     try
                     {
@@ -74,77 +74,65 @@ namespace LingerieButtonsFilter
                     }
                     catch { }
 
-                    // ----------------====================================================
-                    // ДЕБАГ-ШАГ 1: ТОТАЛЬНЫЙ СКАНЕР КУКЛЫ И АВТОСНЯТИЕ
-                    // ----------------====================================================
-                    CharacterCustomization cc = GameObject.FindObjectOfType<CharacterCustomization>();
+                    // 2. УЛЬТИМАТИВНЫЙ 3D-РАДАР СЦЕНЫ (ВЫТЕСНЕНИЕ ПИРСИНГОВ)
                     Dictionary<int, string> virtualSlotsMap = new Dictionary<int, string>();
                     Item itemToClickTakeOff = null;
 
-                    if (cc != null)
+                    // Сканируем строго ТРЕХМЕРНЫЕ МОДЕЛИ ОДЕЖДЫ на всей сцене! Никакого UI!
+                    SkinnedMeshRenderer[] activeMeshes = GameObject.FindObjectsOfType<SkinnedMeshRenderer>();
+                    foreach (var smr in activeMeshes)
                     {
-                        Debug.Log("====================================================================");
-                        Debug.Log($"[SWPT ДЕБАГ UI]: GenerateIcons сработал! Сканируем куклу '{cc.gameObject.name}'...");
+                        if (smr == null || !smr.gameObject.activeInHierarchy) continue;
 
-                        foreach (Transform child in cc.GetComponentsInChildren<Transform>(true))
+                        string cleanMeshName = smr.gameObject.name.ToLower().Replace("(clone)", "").Trim();
+
+                        int matchedCategory = -1;
+                        foreach (var pair in localMappingTable)
                         {
-                            if (child == null || !child.gameObject.activeSelf) continue;
-
-                            string cleanName = child.name.ToLower().Replace("(clone)", "").Trim();
-
-                            // ШПИОН: выводим вообще каждую активную кость или меш на кукле!
-                            Debug.Log($"   -> [КУКЛА ОБЪЕКТ]: На кукле горит меш с именем: '{child.name}' (В нижнем регистре: '{cleanName}')");
-
-                            int matchedCategory = -1;
-                            foreach (var pair in localMappingTable)
-                            {
-                                if (cleanName.Contains(pair.Key)) { matchedCategory = pair.Value; break; }
-                            }
-
-                            if (matchedCategory > 100)
-                            {
-                                if (virtualSlotsMap.ContainsKey(matchedCategory))
-                                {
-                                    string oldItemName = virtualSlotsMap[matchedCategory];
-                                    Debug.LogWarning($"   => [ОБНАРУЖЕН КОНФЛИКТ КАТЕГОРИИ {matchedCategory}]: '{child.name}' воюет с '{oldItemName}'!");
-
-                                    foreach (Transform t in originalItemsBackup)
-                                    {
-                                        if (t == null) continue;
-                                        string storageNameLower = t.gameObject.name.ToLower().Replace("(clone)", "").Trim();
-                                        string oldItemNameLower = oldItemName.ToLower().Replace("(clone)", "").Trim();
-
-                                        if (oldItemNameLower.Contains(storageNameLower) || storageNameLower.Contains(oldItemNameLower))
-                                        {
-                                            itemToClickTakeOff = t.GetComponent<Item>();
-                                            Debug.Log($"   => [КАНДИДАТ НА СНЯТИЕ]: Нашли старый предмет на складе: '{t.gameObject.name}'");
-                                            break;
-                                        }
-                                    }
-                                }
-                                else
-                                {
-                                    virtualSlotsMap.Add(matchedCategory, child.name);
-                                    Debug.Log($"   -> [ФИКСАЦИЯ СЛОТА]: Слот {matchedCategory} успешно занят моделью '{child.name}'");
-                                }
-                            }
+                            if (cleanMeshName.Contains(pair.Key)) { matchedCategory = pair.Value; break; }
                         }
 
-                        if (itemToClickTakeOff != null)
+                        if (matchedCategory > 100)
                         {
-                            try
+                            if (virtualSlotsMap.ContainsKey(matchedCategory))
                             {
-                                Debug.Log($"[SWPT ДЕБАГ UI]: Инициируем виртуальный клик снятия для: '{itemToClickTakeOff.gameObject.name}'");
-                                isProcessingAutoUnequip = true;
-                                itemToClickTakeOff.Use(cc);
-                                isProcessingAutoUnequip = false;
-                                Debug.Log("[SWPT ДЕБАГ UI]: Виртуальный клик завершен.");
+                                string oldItemName = virtualSlotsMap[matchedCategory];
+                                Debug.Log($"[SWPT АНАТОМИЯ]: Конфликт категории {matchedCategory}! Модель '{smr.gameObject.name}' наложилась на '{oldItemName}'");
+
+                                foreach (Transform t in originalItemsBackup)
+                                {
+                                    if (t == null) continue;
+                                    string storageNameLower = t.gameObject.name.ToLower().Replace("(clone)", "").Trim();
+                                    string oldItemNameLower = oldItemName.ToLower().Replace("(clone)", "").Trim();
+
+                                    if (oldItemNameLower.Contains(storageNameLower) || storageNameLower.Contains(oldItemNameLower))
+                                    {
+                                        itemToClickTakeOff = t.GetComponent<Item>();
+                                        break;
+                                    }
+                                }
                             }
-                            catch (Exception ex) { isProcessingAutoUnequip = false; Debug.LogError($"Ошибка клика: {ex.Message}"); }
+                            else
+                            {
+                                virtualSlotsMap.Add(matchedCategory, smr.gameObject.name);
+                            }
                         }
                     }
 
-                    // ШАГ 2: ДВУХЭТАПНАЯ ФИЛЬТРАЦИЯ UI
+                    // ВЫЗЫВАЕМ СНЯТИЕ ПИРСИНГА
+                    if (itemToClickTakeOff != null)
+                    {
+                        try
+                        {
+                            CharacterCustomization cc = GameObject.FindObjectOfType<CharacterCustomization>();
+                            isProcessingAutoUnequip = true;
+                            itemToClickTakeOff.Use(cc);
+                            isProcessingAutoUnequip = false;
+                        }
+                        catch { isProcessingAutoUnequip = false; }
+                    }
+
+                    // 3. ЧИСТАЯ ДВУХЭТАПНАЯ ФИЛЬТРАЦИЯ UI
                     foreach (Transform itemTransform in originalItemsBackup)
                     {
                         if (itemTransform == null) continue;
@@ -162,7 +150,6 @@ namespace LingerieButtonsFilter
 
                             int uiCategory = -1;
                             bool foundInMap = false;
-
                             foreach (var pair in localMappingTable)
                             {
                                 if (itemNameLower.Contains(pair.Key)) { uiCategory = pair.Value; foundInMap = true; break; }
@@ -190,84 +177,68 @@ namespace LingerieButtonsFilter
         }
 
         [HarmonyPostfix]
-        public static void Postfix(object __instance, ref bool __result)
-        {
-            if (!__result && originalItemsBackup != null) { RestoreImmediately(); return; }
-            try
-            {
-                Type iteratorType = __instance.GetType();
-                FieldInfo stateField = iteratorType.GetField("<>1__state", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (stateField != null && (int)stateField.GetValue(__instance) == -1) RestoreImmediately();
-            }
-            catch { }
-        }
-
-        private static void RestoreImmediately()
-        {
-            if (originalItemsBackup != null && Global.code?.playerLingerieStorage?.items?.items != null)
-            {
-                List<Transform> gameItemsList = Global.code.playerLingerieStorage.items.items;
-                gameItemsList.Clear(); gameItemsList.AddRange(originalItemsBackup); originalItemsBackup = null;
-            }
-        }
-    }
-
-    // ====================================================================
-    // ТОТАЛЬНЫЙ ДЕБАГ-РЕСТАВРАТОР КРУЖЕВНЫХ ПЕРЧАТОК
-    // Выворачивает наизнанку логику поиска мешей при каждом обновлении!
-    // ====================================================================
-    [HarmonyPatch(typeof(UIInventory), "RefreshEquipment")]
-    public class UIInventory_Refresh_GlovesRestorer_Patch
-    {
-        [HarmonyPostfix]
         public static void Postfix()
         {
             try
             {
                 CharacterCustomization cc = GameObject.FindObjectOfType<CharacterCustomization>();
-                if (cc == null)
-                {
-                    Debug.LogError("[SWPT ДЕБАГ РЕСТАВРАТОР]: Кукла CharacterCustomization не найдена на сцене!");
-                    return;
-                }
-                if (Global.code?.playerLingerieStorage?.items?.items == null)
-                {
-                    Debug.LogError("[SWPT ДЕБАГ РЕСТАВРАТОР]: Склад playerLingerieStorage пуст или null!");
-                    return;
-                }
+                if (cc == null) return;
+                if (Global.code?.playerLingerieStorage?.items?.items == null) return;
 
                 bool isMaskActive = false;
                 bool isRealGlovesActive = false;
 
+                // ЖИРНЫЙ РАЗДЕЛИТЕЛЬ ДЛЯ ГЛАЗ В КОНСОЛИ
                 Debug.Log("====================================================================");
-                Debug.Log("[SWPT ДЕБАГ РЕСТАВРАТОР]: Запущен точечный скан костей для реставрации перчаток...");
+                Debug.Log("[SWPT СУПЕР-ДЕБАГ]: Начинаем точечный анализ скелета куклы...");
 
                 foreach (Transform child in cc.GetComponentsInChildren<Transform>(true))
                 {
-                    if (child == null || !child.gameObject.activeSelf) continue;
+                    if (child == null) continue;
+
+                    // 1. Проверяем статус активности объекта (включен/выключен)
+                    bool isActive = child.gameObject.activeSelf;
                     string nameLower = child.name.ToLower();
 
-                    // ШПИОН: Печатаем абсолютно всё, что видит реставратор в костях куклы!
-                    Debug.Log($"   -> [РЕСТАВРАТОР СКАНИРУЕТ OBJ]: '{child.name}'");
+                    // 2. ОТСЕКАЕМ UI И СКЕЛЕТНЫЙ МУСОР: ловим только ключевые слова одежды модов и перчаток!
+                    bool isInteresting = nameLower.Contains("gloves") ||
+                                          nameLower.Contains("blindfold") ||
+                                          nameLower.Contains("gag") ||
+                                          nameLower.Contains("mask") ||
+                                          nameLower.Contains("piercing") ||
+                                          nameLower.Contains("collar") ||
+                                          nameLower.Contains("backup");
 
-                    if (nameLower.Contains("blindfold") || nameLower.Contains("gag") || nameLower.Contains("mask"))
+                    if (isInteresting)
                     {
-                        isMaskActive = true;
-                        Debug.Log($"      ==> ХИТ! Найдена активная маска/кляп по ключевому слову: '{child.name}'");
-                    }
-                    if (nameLower.Contains("gloves") && !nameLower.Contains("blindfold") && !nameLower.Contains("gag"))
-                    {
-                        isRealGlovesActive = true;
-                        Debug.Log($"      ==> ХИТ! Найдены активные перчатки по ключевому слову: '{child.name}'");
+                        // ВЫВОДИМ В КОНСОЛЬ ТОЛЬКО ИНТЕРЕСНЫЕ НАХОДКИ ЖИРНЫМ МАРКЕРОМ!
+                        Debug.Log($"   [НАХОДКА В КОСТЯХ]: Имя='{child.name}' | Активен на сцене={isActive} | Родитель='{child.parent?.name ?? "Корень"}'");
+
+                        // Если объект физически включен (активен) на теле — выставляем радар-флаги
+                        if (isActive)
+                        {
+                            if (nameLower.Contains("blindfold") || nameLower.Contains("gag") || nameLower.Contains("mask"))
+                            {
+                                isMaskActive = true;
+                                Debug.Log($"      ======> ФЛАГ: Зафиксирована АКТИВНАЯ МАСКА/КЛЯП: '{child.name}'");
+                            }
+                            // Считаем перчатками только то, что имеет "gloves" в имени, но НЕ является маской/кляпом
+                            if (nameLower.Contains("gloves") && !nameLower.Contains("blindfold") && !nameLower.Contains("gag"))
+                            {
+                                isRealGlovesActive = true;
+                                Debug.Log($"      ======> ФЛАГ: Зафиксированы АКТИВНЫЕ ПЕРЧАТКИ: '{child.name}'");
+                            }
+                        }
                     }
                 }
 
-                Debug.Log($"[SWPT ДЕБАГ РЕСТАВРАТОР]: Итоги сканирования скелета -> Маска активна? = {isMaskActive}, Перчатки активны? = {isRealGlovesActive}");
+                // ВЫВОДИМ ИТОГОВЫЙ СТАТУС КАДРА ОБНОВЛЕНИЯ
+                Debug.Log($"[SWPT СУПЕР-ДЕБАГ]: ИТОГ КАДРА -> Маска на теле есть? = {isMaskActive} | Перчатки на теле есть? = {isRealGlovesActive}");
 
-                // КРИТИЧЕСКИЙ МИГ: Игра стерла перчатки из-за надетой маски!
+                // КРИТИЧЕСКИЙ МИГ РЕСТАВРАЦИИ
                 if (isMaskActive && !isRealGlovesActive)
                 {
-                    Debug.Log("[SWPT ДЕБАГ РЕСТАВРАТОР]: Условия выполнены (Маска есть, перчаток нет). Прочесываем сундук в поисках перчаток...");
+                    Debug.Log("[SWPT СУПЕР-ДЕБАГ]: ТРИГГЕР СРАБОТАЛ! Маска горит, перчаток нет. Запускаем поиск в сундуке...");
 
                     foreach (Transform t in Global.code.playerLingerieStorage.items.items)
                     {
@@ -277,21 +248,16 @@ namespace LingerieButtonsFilter
                         var itemComponent = t.GetComponent<Item>();
                         if (itemComponent != null && itemComponent.slotType == SlotType.lingeriegloves && !storageName.Contains("blindfold") && !storageName.Contains("gag"))
                         {
-                            Debug.Log($"[SWPT ДЕБАГ РЕСТАВРАТОР]: Нашли кандидата на реставрацию в сундуке: '{t.name}'. Вызываем спавн...");
+                            Debug.Log($"[SWPT СУПЕР-ДЕБАГ]: Спавним перчатки из сундука: '{t.name}' на резервный маркер...");
                             Transform restoredGloves = Utility.Instantiate(t);
-
-                            // Спавним на изолированный маркер, чтобы игра их больше не стирала
                             cc.AddItem(restoredGloves, "lingerieGloves_backup");
-                            Debug.Log("[SWPT ДЕБАГ РЕСТАВРАТОР]: Метод AddItem для реставрации успешно выполнен!");
                             break;
                         }
                     }
                 }
+                Debug.Log("====================================================================");
             }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[SWPT КРИТ ОШИБКА РЕСТАВРАТОРА]: {ex.Message}\n{ex.StackTrace}");
-            }
+            catch (Exception ex) { Debug.LogError($"[SWPT СУПЕР-ДЕБАГ КРИТ]: {ex.Message}"); }
         }
     }
 }
