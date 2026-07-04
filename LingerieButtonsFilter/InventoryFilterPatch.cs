@@ -51,68 +51,56 @@ namespace LingerieButtonsFilter
                         var itemComponent = itemTransform.GetComponent<Item>();
                         if (itemComponent != null)
                         {
-                            int slotTypeInt = (int)itemComponent.slotType;
+                            // Сохраняем исходные данные для диагностики
+                            SlotType originalType = itemComponent.slotType;
+                            int slotTypeInt = (int)originalType;
                             string itemNameLower = itemTransform.name.ToLower().Replace("(clone)", "").Trim();
+                            string mappingResult = "ACCESSORIE (По умолчанию)";
 
-                            bool isStandard = (itemComponent.slotType == SlotType.bra ||
-                                               itemComponent.slotType == SlotType.panties ||
-                                               itemComponent.slotType == SlotType.stockings ||
-                                               itemComponent.slotType == SlotType.suspenders ||
-                                               itemComponent.slotType == SlotType.heels);
+                            bool isStandard = (originalType == SlotType.bra ||
+                                               originalType == SlotType.panties ||
+                                               originalType == SlotType.stockings ||
+                                               originalType == SlotType.suspenders ||
+                                               originalType == SlotType.heels);
 
                             if (!isStandard)
                             {
-                                // Ищем предмет в нашей текстовой базе данных Lingerie_Item_Mapping.txt
                                 if (MainPlugin.ItemMappingTable.TryGetValue(itemNameLower, out int customSlotId))
                                 {
                                     slotTypeInt = customSlotId;
+                                    mappingResult = ((CustomSlotType)customSlotId).ToString();
 
-                                    // ====================================================================
-                                    // УЛЬТИМАТИВНЫЙ АНАТОМИЧЕСКИЙ МАКРО-МАППИНГ:
-                                    // Мы изолируем ТОЛЬКО специфические категории, выдавая им жесткие скрытые слоты,
-                                    // чтобы они гарантированно не воевали с перчатками и платьями.
-                                    // А категорию Accessories (100) мы ВООБЩЕ НЕ ТРОГАЕМ — игра сама отдаст ей 
-                                    // ВСЕ оставшиеся свободные слоты куклы misc1-misc8!
-                                    // ====================================================================
-
+                                    // Наш временный маппинг по слотам (18-24)
                                     switch (customSlotId)
                                     {
-                                        case 101: // Hats -> Отправляем в выделенный слот misc2 (18)
-                                            itemComponent.slotType = (SlotType)18; break;
-                                        case 102: // Eyes (Маски) -> Отправляем в выделенный слот misc3 (19) (Спасаем перчатки!)
-                                            itemComponent.slotType = (SlotType)19; break;
-                                        case 103: // Mouth (Кляпы) -> Отправляем в выделенный слот misc4 (20)
-                                            itemComponent.slotType = (SlotType)20; break;
-                                        case 104: // Earrings -> Отправляем в выделенный слот misc5 (21)
-                                            itemComponent.slotType = (SlotType)21; break;
-                                        case 111: // Wrists -> Отправляем в выделенный слот misc6 (22)
-                                            itemComponent.slotType = (SlotType)22; break;
-                                        case 112: // Neck (Ошейники) -> Отправляем в выделенный слот misc7 (23)
-                                            itemComponent.slotType = (SlotType)23; break;
-                                        case 113: // Nipples -> Отправляем в выделенный слот misc8 (24)
-                                            itemComponent.slotType = (SlotType)24; break;
-
-                                        case 100: // Accessories -> Специально пропускаем! 
-                                        default:
-                                            // Ничего не меняем в компоненте игры. Вещь сохраняет свой тип none/misc,
-                                            // и движок игры сам красиво распределит её по оставшемуся пулу слотов!
-                                            break;
+                                        case 101: itemComponent.slotType = (SlotType)18; break;
+                                        case 102: itemComponent.slotType = (SlotType)19; break;
+                                        case 103: itemComponent.slotType = (SlotType)20; break;
+                                        case 104: itemComponent.slotType = (SlotType)21; break;
+                                        case 111: itemComponent.slotType = (SlotType)22; break;
+                                        case 112: itemComponent.slotType = (SlotType)23; break;
+                                        case 113: itemComponent.slotType = (SlotType)24; break;
+                                        default: break;
                                     }
                                 }
                                 else if (slotTypeInt < 100)
                                 {
-                                    // Если вещи нет в блокноте, она по умолчанию считается общим аксессуаром.
-                                    // Мы просто переводим её маркер для UI-кнопки в 100, но код игры НЕ трогаем!
                                     slotTypeInt = 100;
                                 }
                             }
 
+                            // ДИДНОСТИЧЕСКИЙ ВЫВОД: Выводим подробный лог по КАЖДОМУ кастомному предмету,
+                            // который сейчас обрабатывается интерфейсом!
+                            if (!isStandard)
+                            {
+                                Debug.Log($"[SWPT ДИАГНОСТИКА]: Предмет='{itemTransform.name}' | " +
+                                          $"Исходный тип в ассете={originalType} ({(int)originalType}) | " +
+                                          $"Распознан в Блокноте как={mappingResult} | " +
+                                          $"Итоговый слот для куклы={itemComponent.slotType} ({(int)itemComponent.slotType})");
+                            }
 
-                            // --- РАСПРЕДЕЛЕНИЕ ПО ФИЗИЧЕСКИМ КНОПКАМ ИНТЕРФЕЙСА ---
                             if (MainPlugin.FilterMode == 1)
                             {
-                                // КНОПКА MASKS: Собирает Hats (101), Eyes (102), Mouth (103), Earrings (104)
-                                // И оставляем родной тип 7 (перчатки), если вы его не переназначили
                                 if ((slotTypeInt >= 101 && slotTypeInt <= 104) || slotTypeInt == 7)
                                 {
                                     filteredItems.Add(itemTransform);
@@ -120,7 +108,6 @@ namespace LingerieButtonsFilter
                             }
                             else if (MainPlugin.FilterMode == 2)
                             {
-                                // КНОПКА OTHER: Собирает Accessorie (100), Wrists (111), Neck (112), Nipples (113)
                                 if (slotTypeInt == 100 || (slotTypeInt >= 111 && slotTypeInt <= 113))
                                 {
                                     filteredItems.Add(itemTransform);
@@ -135,6 +122,7 @@ namespace LingerieButtonsFilter
             }
             catch (Exception ex) { Debug.LogError($"[SWPT Filter] Ошибка Prefix: {ex.Message}"); }
         }
+
 
         [HarmonyPostfix]
         public static void Postfix(object __instance, ref bool __result)

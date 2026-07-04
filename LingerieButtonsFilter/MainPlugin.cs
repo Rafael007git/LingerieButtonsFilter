@@ -55,6 +55,17 @@ namespace LingerieButtonsFilter
             harmony.PatchAll();
 
             Logger.LogInfo("Финальный релиз мода гардероба 1.2.0 успешно запущен и защищен!");
+
+            // ДЕБАГ-ШПИОН №1: Печатает карту слотов игры с их реальными ID при старте!
+            try
+            {
+                foreach (var val in System.Enum.GetValues(typeof(SlotType)))
+                {
+                    Logger.LogInfo($"[SWPT КАРТА СЛОТОВ]: {val} = {(int)val}");
+                }
+            }
+            catch (Exception ex) { Logger.LogError($"Ошибка шпиона карты слотов: {ex.Message}"); }
+
         }
 
         private void LoadEmbeddedIcons()
