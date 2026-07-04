@@ -51,7 +51,6 @@ namespace LingerieButtonsFilter
                         var itemComponent = itemTransform.GetComponent<Item>();
                         if (itemComponent != null)
                         {
-                            // Оставляем исходный тип для локальной фильтрации на UI кнопок
                             int slotTypeInt = (int)itemComponent.slotType;
                             string itemNameLower = itemTransform.name.ToLower().Replace("(clone)", "").Trim();
 
@@ -63,30 +62,22 @@ namespace LingerieButtonsFilter
 
                             if (!isStandard)
                             {
-                                // Ищем предмет в нашей текстовой базе данных Lingerie_Item_Mapping.txt
                                 if (MainPlugin.ItemMappingTable.TryGetValue(itemNameLower, out int customSlotId))
                                 {
-                                    slotTypeInt = customSlotId; // Задаем ID (100-113) ТОЛЬКО для сортировки кнопок!
+                                    slotTypeInt = customSlotId;
 
-                                    // МАГИЯ СВОБОДНЫХ СЛОТОВ:
-                                    // Если вы записали вещь в Блокнот, мы насильно превращаем её тип 
-                                    // в SlotType.none (10) на уровне игрового компонента!
-                                    // Это заставит игру вешать маски, кляпы и ошейники в свободные слоты misc1-misc8,
-                                    // они перестанут воевать с перчатками (lingeriegloves) и будут надеваться одновременно!
+                                    // Возвращаем легальный тип none (10), чтобы игра не блокировала клики,
+                                    // но запоминаем кастомную категорию для нашего кастомного менеджера конфликтов ниже!
                                     itemComponent.slotType = SlotType.none;
                                 }
                                 else if (slotTypeInt < 100)
                                 {
-                                    // Если вещи из модов нет в блокноте, она по умолчанию считается общим аксессуаром.
                                     slotTypeInt = 100;
                                 }
                             }
 
-                            // --- СТРОГОЕ РАСПРЕДЕЛЕНИЕ ПО ФИЗИЧЕСКИМ КНОПКАМ ИНТЕРФЕЙСА ---
                             if (MainPlugin.FilterMode == 1)
                             {
-                                // КНОПКА MASKS: Собирает Hats (101), Eyes (102), Mouth (103), Earrings (104)
-                                // И родной тип 7 (если он где-то остался)
                                 if ((slotTypeInt >= 101 && slotTypeInt <= 104) || slotTypeInt == 7)
                                 {
                                     filteredItems.Add(itemTransform);
@@ -94,7 +85,6 @@ namespace LingerieButtonsFilter
                             }
                             else if (MainPlugin.FilterMode == 2)
                             {
-                                // КНОПКА OTHER: Собирает Accessorie (100), Wrists (111), Neck (112), Nipples (113)
                                 if (slotTypeInt == 100 || (slotTypeInt >= 111 && slotTypeInt <= 113))
                                 {
                                     filteredItems.Add(itemTransform);
@@ -110,7 +100,6 @@ namespace LingerieButtonsFilter
             catch (Exception ex) { Debug.LogError($"[SWPT Filter] Ошибка Prefix: {ex.Message}"); }
         }
 
-
         [HarmonyPostfix]
         public static void Postfix(object __instance, ref bool __result)
         {
@@ -124,7 +113,9 @@ namespace LingerieButtonsFilter
             {
                 Type iteratorType = __instance.GetType();
                 FieldInfo stateField = iteratorType.GetField("<>1__state", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (stateField != null && (int)stateField.GetValue(__instance) == -1)
+                if (stateField == null) return;
+
+                if ((int)stateField.GetValue(__instance) == -1)
                 {
                     RestoreImmediately();
                 }
@@ -148,7 +139,65 @@ namespace LingerieButtonsFilter
         }
     }
 
-    // ЖЕЛЕЗНЫЙ ХАНИНГ-ЩИТ: Навсегда спасает Player.log и процессор от багов игры с инпутом
+    // ====================================================================
+    // АВТОНОМНЫЙ ПАТЧ АНАТОМИЧЕСКИХ КОНФЛИКТОВ (УПРАВЛЕНИЕ НАДЕВАНИЕМ)
+    // Перехватывает метод куклы персонажа в момент, когда на неё надевают ЛЮБУЮ вещь!
+    // ====================================================================
+    [HarmonyPatch(typeof(CharacterCustomization), "WearLingerie")] // Метод сидит в коде куклы
+    public class CharacterCustomization_Wear_Patch
+    {
+        [HarmonyPrefix]
+        public static void Prefix(Transform itemTransform, CharacterCustomization __instance)
+        {
+            if (itemTransform == null || __instance == null) return;
+
+            string newItemName = itemTransform.name.ToLower().Replace("(clone)", "").Trim();
+
+            // 1. Проверяем, записана ли НОВАЯ вещь в нашем Блокноте
+            if (MainPlugin.ItemMappingTable.TryGetValue(newItemName, out int newCustomCategory))
+            {
+                // Нам нельзя трогать общую категорию Accessories (100) — пусть платья надеваются свободно
+                if (newCustomCategory == 100) return;
+
+                // 2. Бежим шпионить по всему инвентарю надетого белья игрока!
+                if (Global.code?.playerLingerieStorage?.items?.items == null) return;
+
+                Transform itemToTakeOff = null;
+
+                foreach (Transform wornItem in Global.code.playerLingerieStorage.items.items)
+                {
+                    if (wornItem == null || wornItem == itemTransform) continue;
+
+                    string wornItemName = wornItem.name.ToLower().Replace("(clone)", "").Trim();
+
+                    // 3. Ищем, надета ли на героиню СТАРАЯ вещь из ТОЙ ЖЕ САМОЙ категории Блокнота?
+                    if (MainPlugin.ItemMappingTable.TryGetValue(wornItemName, out int wornCustomCategory))
+                    {
+                        if (wornCustomCategory == newCustomCategory)
+                        {
+                            // Нашли! Например, мы надеваем пирсинг 'Barbell' (113), а на ней уже висит 'Heart' (113)
+                            itemToTakeOff = wornItem;
+                            break;
+                        }
+                    }
+                }
+
+                // 4. Насильно снимаем старую вещь этой же категории перед тем, как игра наденет новую!
+                if (itemToTakeOff != null)
+                {
+                    try
+                    {
+                        // Вызываем встроенный игровой метод принудительного снятия предмета с куклы
+                        __instance.TakeOffLingerie(itemToTakeOff);
+                        Debug.Log($"[SWPT АНАТОМИЯ]: Автоматически снята старая вещь '{itemToTakeOff.name}', освобождая категорию для '{itemTransform.name}'!");
+                    }
+                    catch { }
+                }
+            }
+        }
+    }
+
+    // ЖЕЛЕЗНЫЙ ХАНИНГ-ЩИТ: Навсегда спасает Player.log от спама
     [HarmonyPatch(typeof(PMC_Setting), "GetKeyDown")]
     public class PMC_Setting_GetKeyDown_ShieldPatch
     {

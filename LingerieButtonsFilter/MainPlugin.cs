@@ -66,6 +66,27 @@ namespace LingerieButtonsFilter
             }
             catch (Exception ex) { Logger.LogError($"Ошибка шпиона карты слотов: {ex.Message}"); }
 
+            // ДЕБАГ-ШПИОН: Ищет в коде игры все методы, связанные с надеванием белья
+            try
+            {
+                foreach (var method in typeof(CharacterCustomization).GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                {
+                    if (method.Name.ToLower().Contains("wear") || method.Name.ToLower().Contains("equip") || method.Name.ToLower().Contains("lingerie"))
+                    {
+                        Logger.LogInfo($"[SWPT КУКЛА МЕТОД]: {method.Name}({string.Join(", ", System.Array.ConvertAll(method.GetParameters(), p => p.ParameterType.Name))})");
+                    }
+                }
+                foreach (var method in typeof(UIInventory).GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                {
+                    if (method.Name.ToLower().Contains("click") || method.Name.ToLower().Contains("equip") || method.Name.ToLower().Contains("wear"))
+                    {
+                        Logger.LogInfo($"[SWPT ИНВЕНТАРЬ МЕТОД]: {method.Name}({string.Join(", ", System.Array.ConvertAll(method.GetParameters(), p => p.ParameterType.Name))})");
+                    }
+                }
+            }
+            catch (Exception ex) { Logger.LogError($"Ошибка шпиона методов: {ex.Message}"); }
+
+
         }
 
         private void LoadEmbeddedIcons()
