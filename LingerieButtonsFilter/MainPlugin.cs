@@ -103,10 +103,24 @@ namespace LingerieButtonsFilter
         {
             try
             {
-                // ИДЕАЛЬНОЕ МЕСТО: Переносим файл строго в BepInEx\config\Lingerie_Item_Mapping.txt
-                string filePath = Path.Combine(BepInEx.Paths.ConfigPath, "Lingerie_Item_Mapping.txt");
+                // ИСПОЛЬЗУЕМ 100% НАДЕЖНЫЙ ПУТЬ: Танцуем от папки самого плагина
+                // Переходим в BepInEx/config/ через поднятие на уровень вверх из папки plugins
+                string pluginsFolder = Path.GetDirectoryName(Info.Location); // BepInEx/plugins/LingerieButtonsFilter
+                string bstFolder = Path.GetDirectoryName(pluginsFolder);    // BepInEx/plugins
+                string bepinexRoot = Path.GetDirectoryName(bstFolder);       // BepInEx
 
-                // Если файла нет, генерируем красивый, понятный шаблон-инструкцию для игрока
+                string configFolder = Path.Combine(bepinexRoot, "config");
+                string filePath = Path.Combine(configFolder, "Lingerie_Item_Mapping.txt");
+
+                Logger.LogInfo($"[SWPT] Проверяем путь маппинга: {filePath}");
+
+                // Если папки config вдруг нет (фантастика, но всё же), создаем её
+                if (!Directory.Exists(configFolder))
+                {
+                    Directory.CreateDirectory(configFolder);
+                }
+
+                // Генерируем красивый, понятный шаблон-инструкцию, если файла еще нет
                 if (!File.Exists(filePath))
                 {
                     var sb = new System.Text.StringBuilder();
@@ -114,10 +128,13 @@ namespace LingerieButtonsFilter
                     sb.AppendLine("# Укажите имя объекта из UnityExplorer и через знак '=' присвойте ему анатомический тип.");
                     sb.AppendLine("# Доступные типы: Accessorie, Hats, Eyes, Mouth, Earrings, Wrists, Neck, Nipples");
                     sb.AppendLine("# Все неуказанные кастомные предметы автоматически станут 'Accessorie'.");
+                    sb.AppendLine("# ------------------------------------------------------------------------------");
                     sb.AppendLine("# Пример:");
                     sb.AppendLine("BDSM_Collar_Black = Neck");
                     sb.AppendLine("Super_Sexy_Gag_v2 = Mouth");
+
                     File.WriteAllText(filePath, sb.ToString());
+                    Logger.LogInfo("[SWPT] Файл Lingerie_Item_Mapping.txt успешно создан автоматически!");
                 }
 
                 ItemMappingTable.Clear();
@@ -131,11 +148,11 @@ namespace LingerieButtonsFilter
                     string[] parts = trimmed.Split('=');
                     if (parts.Length == 2)
                     {
-                        string itemName = parts[0].Trim().ToLower(); // Берем левую часть (имя вещи)
-                        string typeStr = parts[1].Trim();            // Берем правую часть (тип)
+                        // ЖЕСТКИЕ ИНДЕКСЫ МАССИВА: [0] — левая часть, [1] — правая часть
+                        string itemName = parts[0].Trim().ToLower();
+                        string typeStr = parts[1].Trim();
 
-                        // Магия превращения текста в системный ID (через наш Enum CustomSlotType)
-                        int targetSlotId = 100; // По умолчанию Accessorie, если текст не распознан
+                        int targetSlotId = 100; // По умолчанию Accessorie
 
                         if (System.Enum.TryParse(typeStr, true, out CustomSlotType matchedType))
                         {
@@ -148,10 +165,15 @@ namespace LingerieButtonsFilter
                         }
                     }
                 }
-                Logger.LogInfo($"[SWPT] Загружена конфигурация маппинга из папки config. Записей: {ItemMappingTable.Count}");
+                Logger.LogInfo($"[SWPT] Успешно загружена конфигурация маппинга. Записей: {ItemMappingTable.Count}");
             }
-            catch (System.Exception ex) { Logger.LogError($"Ошибка загрузки Lingerie_Item_Mapping.txt: {ex.Message}"); }
+            catch (System.Exception ex)
+            {
+                // Теперь мы ЖЕСТКО выведем ошибку в консоль, если Windows или BepInEx заблокируют запись!
+                Logger.LogError($"[SWPT КРИТ] Ошибка инициализации Lingerie_Item_Mapping.txt: {ex.Message}");
+            }
         }
+
 
     }
 }

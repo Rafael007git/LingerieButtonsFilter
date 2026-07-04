@@ -43,6 +43,13 @@ namespace LingerieButtonsFilter
                     List<Transform> gameItemsList = Global.code.playerLingerieStorage.items.items;
 
                     originalItemsBackup = new List<Transform>(gameItemsList);
+
+                    // ВРЕМЕННЫЙ ШПИОН: Печатает в консоль точные системные имена всех вещей игрока
+                    foreach (Transform t in originalItemsBackup)
+                    {
+                        if (t != null) Debug.Log($"[SWPT ШПИОН ИМЕН]: '{t.name}'");
+                    }
+
                     List<Transform> filteredItems = new List<Transform>();
 
                     foreach (Transform itemTransform in originalItemsBackup)
