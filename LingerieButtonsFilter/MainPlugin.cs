@@ -27,28 +27,31 @@ namespace LingerieButtonsFilter
             LoadEmbeddedIcons();
             LoadItemMappingTable();
 
-            // ДЕБАГ-ШПИОН: Насильно вытаскиваем истинные имена методов ДО запуска патчей Harmony!
+            // СТРОГИЙ НАУЧНЫЙ СКАНЕР: Ищем истинные методы использования предметов
             try
             {
-                Logger.LogInfo("=== ЗАПУСК СЛОТ-ДЕТЕКТИВА ДЛЯ КУКЛЫ ===");
-                foreach (var method in typeof(CharacterCustomization).GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                Logger.LogInfo("=== АНАЛИЗ МЕТОДОВ КЛАССА ITEM ===");
+                foreach (var method in typeof(Item).GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
                 {
-                    if (method.Name.ToLower().Contains("wear") || method.Name.ToLower().Contains("equip") || method.Name.ToLower().Contains("lingerie") || method.Name.ToLower().Contains("take"))
+                    string name = method.Name.ToLower();
+                    if (name.Contains("use") || name.Contains("equip") || name.Contains("wear") || name.Contains("click") || name.Contains("active"))
                     {
-                        Logger.LogInfo($"[SWPT КУКЛА МЕТОД]: {method.Name}({string.Join(", ", System.Array.ConvertAll(method.GetParameters(), p => p.ParameterType.Name))})");
+                        Logger.LogInfo($" -> [ITEM МЕТОД]: {method.Name}({string.Join(", ", System.Array.ConvertAll(method.GetParameters(), p => p.ParameterType.Name))})");
                     }
                 }
 
-                Logger.LogInfo("=== ЗАПУСК СЛОТ-ДЕТЕКТИВА ДЛЯ ИНВЕНТАРЯ ===");
-                foreach (var method in typeof(UIInventory).GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                // На всякий случай проверяем и ItemData из ModTool
+                Type itemDataType = typeof(MainPlugin).Assembly.GetType("ItemData") ?? typeof(UIInventory).Assembly.GetType("ItemData");
+                if (itemDataType != null)
                 {
-                    if (method.Name.ToLower().Contains("click") || method.Name.ToLower().Contains("equip") || method.Name.ToLower().Contains("wear") || method.Name.ToLower().Contains("toggle"))
+                    Logger.LogInfo("=== АНАЛИЗ МЕТОДОВ КЛАССА ITEMDATA ===");
+                    foreach (var method in itemDataType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
                     {
-                        Logger.LogInfo($"[SWPT ИНВЕНТАРЬ МЕТОД]: {method.Name}({string.Join(", ", System.Array.ConvertAll(method.GetParameters(), p => p.ParameterType.Name))})");
+                        Logger.LogInfo($" -> [ITEMDATA МЕТОД]: {method.Name}({string.Join(", ", System.Array.ConvertAll(method.GetParameters(), p => p.ParameterType.Name))})");
                     }
                 }
             }
-            catch (Exception ex) { Logger.LogError($"Ошибка шпиона методов: {ex.Message}"); }
+            catch (Exception ex) { Logger.LogError($"Ошибка точечного шпиона: {ex.Message}"); }
 
             // ПОДПИСКА НА СЦЕНЫ
             UnityEngine.SceneManagement.SceneManager.sceneLoaded += (scene, mode) =>
