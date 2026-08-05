@@ -36,7 +36,7 @@ namespace LingerieButtonsFilter
         public static void Init(ConfigFile config)
         {
             // UI настройки
-            StartY = config.Bind("UI Geometry", "StartY", -250f, "Смещение всего ряда.");
+            StartY = config.Bind("UI Geometry", "StartY", -40f, "Смещение всего ряда.");
             ButtonWidth = config.Bind("UI Geometry", "ButtonWidth", 176f, "Ширина кнопок.");
             ButtonHeight = config.Bind("UI Geometry", "ButtonHeight", 46f, "Высота кнопок.");
             Spacing = config.Bind("UI Geometry", "Spacing", 7f, "Отступ между кнопками.");
