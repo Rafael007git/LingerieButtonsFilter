@@ -3,7 +3,7 @@ using System;
 
 namespace LingerieButtonsFilter
 {
-    // ЖЕЛЕЗНЫЙ ХАНИНГ-ЩИТ: Навсегда спасает Player.log от спама инпута
+    // Input spam suppressor for Player.log cleanup optimization
     [HarmonyPatch(typeof(PMC_Setting), "GetKeyDown")]
     public class LogShieldPatch
     {
