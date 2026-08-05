@@ -10,12 +10,12 @@ For example, equipping any mask from MrEsturk's mod automatically forces the cha
 
 3. THE TARGET ARCHITECTURE (WHAT WE WANT)
 We aim to introduce 6 new functional accessory categories:
-1.	Headwear (Hats, crowns)
-2.	Eyes/Face (Masks, glasses)
-3.	Mouth (Gags, etc.)
-4.	Earrings
-5.	Neck (Collars, necklaces)
-6.	Nipples (Piercings, clamps)
+ - Headwear (Hats, crowns)
+ - Eyes/Face (Masks, glasses)
+ - Mouth (Gags, etc.)
+ - Earrings
+ - Neck (Collars, necklaces)
+ - Nipples (Piercings, clamps)
 UI/UX Layout:
 To prevent overcrowding the Character Customization UI, we can group these new categories into two distinct visual sections:
 •	"Head Accessories" (combining Headwear, Face, Mouth, and Earrings).
