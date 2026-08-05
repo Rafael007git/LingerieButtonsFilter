@@ -16,6 +16,7 @@ We aim to introduce 6 new functional accessory categories:
  - Earrings
  - Neck (Collars, necklaces)
  - Nipples (Piercings, clamps)
+ 
 UI/UX Layout:
 To prevent overcrowding the Character Customization UI, we can group these new categories into two distinct visual sections:
 •	"Head Accessories" (combining Headwear, Face, Mouth, and Earrings).
