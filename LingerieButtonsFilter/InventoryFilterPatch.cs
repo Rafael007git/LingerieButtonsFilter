@@ -155,15 +155,18 @@ namespace LingerieButtonsFilter
                             int slotTypeInt = (int)itemComponent.slotType;
                             string itemNameLower = itemTransform.name.ToLower().Replace("(clone)", "").Trim();
 
+                            // Protect all vanilla lingerie types from being hidden by the custom filters
                             bool isStandard = (itemComponent.slotType == SlotType.bra ||
                                                itemComponent.slotType == SlotType.panties ||
                                                itemComponent.slotType == SlotType.stockings ||
                                                itemComponent.slotType == SlotType.suspenders ||
-                                               itemComponent.slotType == SlotType.heels);
+                                               itemComponent.slotType == SlotType.heels ||
+                                               itemComponent.slotType == SlotType.lingeriegloves); // Base donor type included
 
                             int uiCategory = -1;
                             bool foundInMap = false;
 
+                            // Lookup the asset name (stripped of clone tags) in the item mapping dictionary
                             if (localMappingTable.TryGetValue(itemNameLower, out int foundSlotId))
                             {
                                 uiCategory = foundSlotId;
@@ -172,23 +175,40 @@ namespace LingerieButtonsFilter
 
                             if (foundInMap)
                             {
-                                slotTypeInt = uiCategory;
+                                slotTypeInt = uiCategory; // Use custom mapped ID from definitions (101-113)
                             }
                             else
                             {
-                                // FIX: Protect vanilla clothing assets from falling into OTHER slot 100
-                                if (itemComponent.slotType == SlotType.none) slotTypeInt = 100;
-                                else slotTypeInt = (int)itemComponent.slotType;
+                                // If the item is missing from mapping but defaults to SlotType.none
+                                if (itemComponent.slotType == SlotType.none)
+                                {
+                                    slotTypeInt = 100; // Route untyped accessories to OTHER by default
+                                }
+                                else
+                                {
+                                    // Keep core vanilla indices intact for standard underwear categories and lingeriegloves
+                                    slotTypeInt = (int)itemComponent.slotType;
+                                }
                             }
 
-                            if (MainPlugin.FilterMode == 1) // MASKS
+                            // CATEGORY FILTER MATRIX ROUTING
+                            if (MainPlugin.FilterMode == 1) // MASKS Tab
                             {
-                                if ((slotTypeInt >= 101 && slotTypeInt <= 104) || slotTypeInt == 7) filteredItems.Add(itemTransform);
+                                // Render only facial and head equipment slots (101 - 104)
+                                if (slotTypeInt >= 101 && slotTypeInt <= 104)
+                                {
+                                    filteredItems.Add(itemTransform);
+                                }
                             }
-                            else if (MainPlugin.FilterMode == 2) // OTHER
+                            else if (MainPlugin.FilterMode == 2) // OTHER Tab
                             {
-                                if (slotTypeInt == 100 || (slotTypeInt >= 111 && slotTypeInt <= 113)) filteredItems.Add(itemTransform);
+                                // Render generic accessories (100), custom wearables (111-113), and base lingerie gloves
+                                if (slotTypeInt == 100 || (slotTypeInt >= 111 && slotTypeInt <= 113) || itemComponent.slotType == SlotType.lingeriegloves)
+                                {
+                                    filteredItems.Add(itemTransform);
+                                }
                             }
+
                         }
                     }
 
