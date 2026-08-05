@@ -9,7 +9,7 @@ using System.Reflection;
 
 namespace LingerieButtonsFilter
 {
-    [BepInPlugin("com.yourname.swpt.inventoryfilter", "SWPT Advanced Wardrobe", "1.2.0")]
+    [BepInPlugin("com.lorifel.swpt.lingeriebuttonsfilter", "SWPT Advanced Wardrobe", "0.0.2")]
     public class MainPlugin : BaseUnityPlugin
     {
         // ОБЪЯВЛЯЕМ ЗДЕСЬ (чтобы кнопка из другого файла могла его вызвать):
