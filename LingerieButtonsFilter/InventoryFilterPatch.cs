@@ -13,7 +13,6 @@ namespace LingerieButtonsFilter
         private static List<Transform> originalItemsBackup = null;
         private static bool isProcessingAutoUnequip = false;
 
-        // Persistent runtime tracking for clothing assets restoration
         public static Item lastActiveGlovesItem = null;
         public static Item lastActiveMaskItem = null;
 
@@ -32,7 +31,7 @@ namespace LingerieButtonsFilter
         }
 
         // ====================================================================
-        // HARMONY PREFIX: INVENTORY RENDERING AND COLLECTION FILTERING MATRIX
+        // HARMONY PREFIX: INVENTORY RENDERING AND STORAGE FILTERING MATRIX
         // ====================================================================
         [HarmonyPrefix]
         public static void Prefix(object __instance)
@@ -55,33 +54,10 @@ namespace LingerieButtonsFilter
                     originalItemsBackup = new List<Transform>(gameItemsList);
                     List<Transform> filteredItems = new List<Transform>();
 
-                    // INITIALIZE EXTRACTED TEXT MAPPING DICTIONARY
-                    Dictionary<string, int> localMappingTable = new Dictionary<string, int>();
-                    try
-                    {
-                        string filePath = Path.Combine(BepInEx.Paths.ConfigPath, "Lingerie_Item_Mapping.txt");
-                        if (File.Exists(filePath))
-                        {
-                            string[] lines = File.ReadAllLines(filePath);
-                            foreach (string line in lines)
-                            {
-                                string trimmed = line.Trim();
-                                if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#")) continue;
-                                string[] parts = trimmed.Split(new char[] { '=' }, 2);
-                                if (parts.Length == 2)
-                                {
-                                    string key = parts[0].Trim().ToLower();
-                                    string val = parts[1].Trim().ToLower();
-                                    int id = 100;
-                                    if (Enum.TryParse(val, true, out CustomSlotType mType)) id = (int)mType;
-                                    if (!localMappingTable.ContainsKey(key)) localMappingTable.Add(key, id);
-                                }
-                            }
-                        }
-                    }
-                    catch { }
+                    Dictionary<string, int> localMappingTable = MainPlugin.ItemMappingTable;
+                    if (localMappingTable == null) return;
 
-                    // RUNTIME VISUAL TRANSFORMS CAPTURE
+                    // VISUAL TRANSFORMS CAPTURE
                     CharacterCustomization cc = GameObject.FindObjectOfType<CharacterCustomization>();
                     Dictionary<int, string> virtualSlotsMap = new Dictionary<int, string>();
                     Item itemToClickTakeOff = null;
@@ -96,18 +72,12 @@ namespace LingerieButtonsFilter
                             if (child == null || !child.gameObject.activeSelf) continue;
                             string cleanName = child.name.ToLower().Replace("(clone)", "").Trim();
 
-                            // STRICT OVERRIDE FOR TRUE PHYSICAL EQUIPMENT DETECTIONS
                             int matchedCategory = -1;
-                            foreach (var pair in localMappingTable)
+                            if (localMappingTable.TryGetValue(cleanName, out int foundId))
                             {
-                                if (cleanName == pair.Key) // FIXED: Strictly matching exact database names instead of Contains
-                                {
-                                    matchedCategory = pair.Value;
-                                    break;
-                                }
+                                matchedCategory = foundId;
                             }
 
-                            // Dynamic flag mapping triggers matching underlying categories
                             if (matchedCategory == (int)CustomSlotType.Wrists) glovesPresent = true;
                             if (matchedCategory == (int)CustomSlotType.Hats || matchedCategory == (int)CustomSlotType.Eyes || matchedCategory == (int)CustomSlotType.Mouth || matchedCategory == (int)CustomSlotType.Neck) maskPresent = true;
 
@@ -122,7 +92,7 @@ namespace LingerieButtonsFilter
                                         string storageNameLower = t.gameObject.name.ToLower().Replace("(clone)", "").Trim();
                                         string oldItemNameLower = oldItemName.ToLower().Replace("(clone)", "").Trim();
 
-                                        if (oldItemNameLower == storageNameLower) // FIXED: Restricting to direct string equals checks
+                                        if (oldItemNameLower == storageNameLower)
                                         {
                                             itemToClickTakeOff = t.GetComponent<Item>();
                                             break;
@@ -133,7 +103,7 @@ namespace LingerieButtonsFilter
                             }
                         }
 
-                        // CAPTURING LIVE RUNTIME REFERENCES FOR RE-EQUIP PROCEDURES
+                        // CAPTURING TRACKING REFERENCES FOR ATTACHMENTS
                         foreach (Transform t in originalItemsBackup)
                         {
                             if (t == null) continue;
@@ -142,7 +112,6 @@ namespace LingerieButtonsFilter
 
                             string sName = t.name.ToLower().Replace("(clone)", "").Trim();
 
-                            // Extract precise mapping lookup to cross-match active equipped tracking
                             if (localMappingTable.TryGetValue(sName, out int runtimeSlotId))
                             {
                                 if (glovesPresent && runtimeSlotId == (int)CustomSlotType.Wrists) lastActiveGlovesItem = itemComponent;
@@ -150,7 +119,7 @@ namespace LingerieButtonsFilter
                             }
                         }
 
-                        // RUNTIME INTERFACE AUTO-RESTORATION PIPELINE
+                        // INTERFACE AUTO-RESTORATION PIPELINE
                         if (maskPresent && !glovesPresent && lastActiveGlovesItem != null)
                         {
                             Transform restored = Utility.Instantiate(lastActiveGlovesItem.transform);
@@ -195,29 +164,30 @@ namespace LingerieButtonsFilter
                             int uiCategory = -1;
                             bool foundInMap = false;
 
-                            // FIXED: Strict dictionary lookup replaces slow and unsafe loop Contains operations
                             if (localMappingTable.TryGetValue(itemNameLower, out int foundSlotId))
                             {
                                 uiCategory = foundSlotId;
                                 foundInMap = true;
                             }
 
-                            if (foundInMap) slotTypeInt = uiCategory;
-                            else if (!isStandard) slotTypeInt = 100;
+                            if (foundInMap)
+                            {
+                                slotTypeInt = uiCategory;
+                            }
+                            else
+                            {
+                                // FIX: Protect vanilla clothing assets from falling into OTHER slot 100
+                                if (itemComponent.slotType == SlotType.none) slotTypeInt = 100;
+                                else slotTypeInt = (int)itemComponent.slotType;
+                            }
 
                             if (MainPlugin.FilterMode == 1) // MASKS
                             {
-                                if ((slotTypeInt >= 101 && slotTypeInt <= 104) || slotTypeInt == 7)
-                                {
-                                    filteredItems.Add(itemTransform);
-                                }
+                                if ((slotTypeInt >= 101 && slotTypeInt <= 104) || slotTypeInt == 7) filteredItems.Add(itemTransform);
                             }
                             else if (MainPlugin.FilterMode == 2) // OTHER
                             {
-                                if (slotTypeInt == 100 || (slotTypeInt >= 111 && slotTypeInt <= 113))
-                                {
-                                    filteredItems.Add(itemTransform);
-                                }
+                                if (slotTypeInt == 100 || (slotTypeInt >= 111 && slotTypeInt <= 113)) filteredItems.Add(itemTransform);
                             }
                         }
                     }
@@ -228,7 +198,82 @@ namespace LingerieButtonsFilter
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[AdvancedWardrobe] Monolithic patch execution exception: {ex.Message}");
+                Debug.LogError($"[AdvancedWardrobe] Monolithic patch execution failure: {ex.Message}");
+            }
+        }
+
+        [HarmonyPostfix]
+        public static void Postfix(object __instance, ref bool __result)
+        {
+            if (isProcessingAutoUnequip) return;
+            if (!__result && originalItemsBackup != null) { RestoreImmediately(); return; }
+            try
+            {
+                Type iteratorType = __instance.GetType();
+                FieldInfo stateField = iteratorType.GetField("<>1__state", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                if (stateField != null && (int)stateField.GetValue(__instance) == -1) RestoreImmediately();
+            }
+            catch { }
+        }
+
+        private static void RestoreImmediately()
+        {
+            if (originalItemsBackup != null && Global.code?.playerLingerieStorage?.items?.items != null)
+            {
+                List<Transform> gameItemsList = Global.code.playerLingerieStorage.items.items;
+                gameItemsList.Clear();
+                gameItemsList.AddRange(originalItemsBackup);
+                originalItemsBackup = null;
+            }
+        }
+    }
+
+    // ====================================================================
+    // GLOBAL CEMENT: PERSISTENT MULTI-SLOT EQUIPMENT OVERRIDE PIPELINE 🧷⚙️
+    // ====================================================================
+    [HarmonyPatch(typeof(UIInventory), "RefreshEquipment")]
+    public class UIInventory_GlobalCement_Patch
+    {
+        [HarmonyPostfix]
+        public static void Postfix()
+        {
+            try
+            {
+                CharacterCustomization cc = GameObject.FindObjectOfType<CharacterCustomization>();
+                if (cc == null) return;
+
+                // 1. FORCE TRANSFORMS PURGE (Prevents mesh duplication overlap anomalies)
+                foreach (Transform child in cc.GetComponentsInChildren<Transform>(true))
+                {
+                    if (child == null) continue;
+                    if (child.parent != null)
+                    {
+                        string parentName = child.parent.name.ToLower();
+                        if (parentName == "misc1" || parentName == "misc2")
+                        {
+                            child.gameObject.SetActive(false);
+                            GameObject.Destroy(child.gameObject);
+                        }
+                    }
+                }
+
+                // 2. HARD LOCK ATTACHMENT: Force-inject onto misc1 anchor
+                if (InventoryFilterPatch.lastActiveGlovesItem != null)
+                {
+                    Transform restoredGloves = Utility.Instantiate(InventoryFilterPatch.lastActiveGlovesItem.transform);
+                    cc.AddItem(restoredGloves, "misc1");
+                }
+
+                // 3. HARD LOCK ATTACHMENT: Force-inject onto misc2 anchor
+                if (InventoryFilterPatch.lastActiveMaskItem != null)
+                {
+                    Transform restoredMask = Utility.Instantiate(InventoryFilterPatch.lastActiveMaskItem.transform);
+                    cc.AddItem(restoredMask, "misc2");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[AdvancedWardrobe Runtime Error]: Equipment anchor failure: {ex.Message}");
             }
         }
     }
