@@ -9,36 +9,37 @@ using System.Reflection;
 
 namespace LingerieButtonsFilter
 {
-    [BepInPlugin("com.lorifel.swpt.lingeriebuttonsfilter", "SWPT Advanced Wardrobe", "0.0.2")]
+    [BepInPlugin("com.lorifel.swpt.lingeriebuttonsfilter", "SWPT Advanced Wardrobe", "0.0.3")] // Updated release version string
     public class MainPlugin : BaseUnityPlugin
     {
-        // ОБЪЯВЛЯЕМ ЗДЕСЬ (чтобы кнопка из другого файла могла его вызвать):
+        // Thread-safe invocation action allowing cross-file interface refresh commands
         public static Action FilterModeChanged;
 
-        public static int FilterMode = 0; // 0 - дефолт, 1 - MASKS, 2 - OTHER
+        // 0 = Default, 1 = MASKS, 2 = OTHER UI display categories row state index
+        public static int FilterMode = 0;
         public static bool IsUiCustomized = false;
         public static Sprite MasksSprite;
         public static Sprite OtherSprite;
 
-        // Наша база данных: Ключ — имя предмета (в нижнем регистре), Значение — ID нового слота
+        // Core database dictionary: Key = lowercase unique asset identity, Value = virtual slot integer index
         public static Dictionary<string, int> ItemMappingTable = new Dictionary<string, int>();
 
         private void Awake()
         {
-            // Инициализируем конфигурацию и загружаем ресурсы
+            // Initialize user definitions properties configurations and load custom asset bundles
             ModConfig.Init(Config);
             LoadEmbeddedIcons();
             LoadItemMappingTable();
 
-            // ПОДПИСКА НА СЦЕНЫ (Чистый, стабильный вариант с защитой от массивов Unity)
+            // SYSTEM SCENE INJECTION: Stable container setup attached to inventory initialization cycles
             UnityEngine.SceneManagement.SceneManager.sceneLoaded += (scene, mode) =>
             {
                 IsUiCustomized = false;
 
-                // Находим массив всех объектов UIInventory на сцене
+                // Safely query active instances within current active canvas allocations
                 UIInventory[] foundInventories = Resources.FindObjectsOfTypeAll<UIInventory>();
 
-                // Если массив не пустой — берем строго первый элемент!
+                // Isolate the root workspace execution block targeting the dominant interface reference
                 UIInventory uiInventory = (foundInventories != null && foundInventories.Length > 0)
                     ? foundInventories[0]
                     : null;
@@ -53,14 +54,12 @@ namespace LingerieButtonsFilter
                 }
             };
 
-            // ЗАПУСК ХАРМОНИ ДЛЯ ВСЕХ СТАБИЛЬНЫХ КЛАССОВ (UI-Фильтр и Щит от спама)
-            // Он выполнится мгновенно и без единой ошибки, так как капризный шкаф из него убран!
-            var harmony = new Harmony("com.yourname.swpt.inventoryfilter");
+            // INITIALIZE HARMONY ENGINE INJECTIONS
+            var harmony = new Harmony("com.lorifel.swpt.inventoryfilter");
             harmony.PatchAll();
 
-            Logger.LogInfo("Мод гардероба 1.2.0 успешно запущен и защищен!");
+            Logger.LogInfo("Advanced Wardrobe Filter Engine successfully initialized.");
         }
-
 
         private void LoadEmbeddedIcons()
         {
@@ -72,18 +71,21 @@ namespace LingerieButtonsFilter
 
                 if (MasksSprite != null && OtherSprite != null)
                 {
-                    Logger.LogInfo("[SWPT Assets] Кастомные иконки MASKS и OTHER успешно активированы!");
+                    Logger.LogInfo("[AdvancedWardrobe] Custom categories MASKS and OTHER sprite icons successfully activated.");
                 }
                 else
                 {
-                    Logger.LogWarning("[SWPT Assets] Спрайты вернули null. Доступные ресурсы:");
+                    Logger.LogWarning("[AdvancedWardrobe] Custom asset sprites returned null. Registered manifest references:");
                     foreach (string res in Assembly.GetExecutingAssembly().GetManifestResourceNames())
                     {
                         Logger.LogInfo($" -> '{res}'");
                     }
                 }
             }
-            catch (Exception ex) { Logger.LogError($"[SWPT Assets] Ошибка ресурсов: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[AdvancedWardrobe] Critical embedded UI resource loading exception: {ex.Message}");
+            }
         }
 
         private Sprite LoadSpriteFromResource(string resourcePath)
@@ -108,33 +110,32 @@ namespace LingerieButtonsFilter
         {
             try
             {
-                // ЖЕЛЕЗНЫЙ ПУТЬ BEPINEX: Прямое попадание в настоящую папку BepInEx\config
+                // Resolve direct system configurations paths tracking definitions text file
                 string configFolder = BepInEx.Paths.ConfigPath;
                 string filePath = Path.Combine(configFolder, "Lingerie_Item_Mapping.txt");
 
-                Logger.LogInfo($"[SWPT] Проверяем путь маппинга: {filePath}");
+                Logger.LogInfo($"[AdvancedWardrobe] Validating dictionary tables routing path: {filePath}");
 
-                // Если папки config вдруг нет (фантастика, но всё же), создаем её
                 if (!Directory.Exists(configFolder))
                 {
                     Directory.CreateDirectory(configFolder);
                 }
 
-                // Генерируем красивый, понятный шаблон-инструкцию, если файла еще нет
+                // Generates an english template configuration file if missing from disk layout
                 if (!File.Exists(filePath))
                 {
                     var sb = new System.Text.StringBuilder();
-                    sb.AppendLine("# === ТАБЛИЦА РАСПРЕДЕЛЕНИЯ ПРЕДМЕТОВ ГАРДЕРОБА ===");
-                    sb.AppendLine("# Укажите имя объекта из UnityExplorer и через знак '=' присвойте ему анатомический тип.");
-                    sb.AppendLine("# Доступные типы: Accessorie, Hats, Eyes, Mouth, Earrings, Wrists, Neck, Nipples");
-                    sb.AppendLine("# Все неуказанные кастомные предметы автоматически станут 'Accessorie'.");
+                    sb.AppendLine("# === ADVANCED WARDROBE FILTER: ITEM SELECTION DICTIONARY ===");
+                    sb.AppendLine("# Locate the exact game object asset name using UnityExplorer, then bind it using '=' symbol.");
+                    sb.AppendLine("# Supported custom categories: Accessorie, Hats, Eyes, Mouth, Earrings, Wrists, Neck, Nipples");
+                    sb.AppendLine("# All unlisted custom equipment items will fall back to 'Accessorie' by default.");
                     sb.AppendLine("# ------------------------------------------------------------------------------");
-                    sb.AppendLine("# Пример:");
+                    sb.AppendLine("# Operational Examples:");
                     sb.AppendLine("BDSM_Collar_Black = Neck");
                     sb.AppendLine("Super_Sexy_Gag_v2 = Mouth");
 
                     File.WriteAllText(filePath, sb.ToString());
-                    Logger.LogInfo("[SWPT] Файл Lingerie_Item_Mapping.txt успешно создан автоматически!");
+                    Logger.LogInfo("[AdvancedWardrobe] Configuration mapping template Lingerie_Item_Mapping.txt created successfully.");
                 }
 
                 ItemMappingTable.Clear();
@@ -148,11 +149,10 @@ namespace LingerieButtonsFilter
                     string[] parts = trimmed.Split('=');
                     if (parts.Length == 2)
                     {
-                        // ЖЕСТКИЕ ИНДЕКСЫ МАССИВА: [0] — левая часть, [1] — правая часть
                         string itemName = parts[0].Trim().ToLower();
                         string typeStr = parts[1].Trim().ToLower();
 
-                        int targetSlotId = 100; // По умолчанию Accessorie
+                        int targetSlotId = 100; // Default fallback index definitions match
 
                         if (System.Enum.TryParse(typeStr, true, out CustomSlotType matchedType))
                         {
@@ -165,15 +165,12 @@ namespace LingerieButtonsFilter
                         }
                     }
                 }
-                Logger.LogInfo($"[SWPT] Успешно загружена конфигурация маппинга. Записей: {ItemMappingTable.Count}");
+                Logger.LogInfo($"[AdvancedWardrobe] Data mapping layout loaded successfully. Active item definitions records count: {ItemMappingTable.Count}");
             }
             catch (System.Exception ex)
             {
-                // Теперь мы ЖЕСТКО выведем ошибку в консоль, если Windows или BepInEx заблокируют запись!
-                Logger.LogError($"[SWPT КРИТ] Ошибка инициализации Lingerie_Item_Mapping.txt: {ex.Message}");
+                Logger.LogError($"[AdvancedWardrobe Critical Failure] System file storage configuration execution error: {ex.Message}");
             }
         }
-
-
     }
 }

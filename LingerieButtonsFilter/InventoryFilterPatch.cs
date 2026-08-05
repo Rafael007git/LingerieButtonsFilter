@@ -13,7 +13,7 @@ namespace LingerieButtonsFilter
         private static List<Transform> originalItemsBackup = null;
         private static bool isProcessingAutoUnequip = false;
 
-        // Живые ссылки на компоненты Item для реставрации по всей игре
+        // Persistent runtime tracking for clothing assets restoration
         public static Item lastActiveGlovesItem = null;
         public static Item lastActiveMaskItem = null;
 
@@ -32,7 +32,7 @@ namespace LingerieButtonsFilter
         }
 
         // ====================================================================
-        // PREFIX ЦИТАДЕЛИ ИНТЕРФЕЙСА: СНИМОК СЦЕНЫ И ФИЛЬТРАЦИЯ UI
+        // HARMONY PREFIX: INVENTORY RENDERING AND COLLECTION FILTERING MATRIX
         // ====================================================================
         [HarmonyPrefix]
         public static void Prefix(object __instance)
@@ -55,7 +55,7 @@ namespace LingerieButtonsFilter
                     originalItemsBackup = new List<Transform>(gameItemsList);
                     List<Transform> filteredItems = new List<Transform>();
 
-                    // ЗАГРУЗКА БЛОКНОТА
+                    // INITIALIZE EXTRACTED TEXT MAPPING DICTIONARY
                     Dictionary<string, int> localMappingTable = new Dictionary<string, int>();
                     try
                     {
@@ -81,7 +81,7 @@ namespace LingerieButtonsFilter
                     }
                     catch { }
 
-                    // РАНТАЙМ-СНИМОК СЦЕНЫ
+                    // RUNTIME VISUAL TRANSFORMS CAPTURE
                     CharacterCustomization cc = GameObject.FindObjectOfType<CharacterCustomization>();
                     Dictionary<int, string> virtualSlotsMap = new Dictionary<int, string>();
                     Item itemToClickTakeOff = null;
@@ -96,14 +96,20 @@ namespace LingerieButtonsFilter
                             if (child == null || !child.gameObject.activeSelf) continue;
                             string cleanName = child.name.ToLower().Replace("(clone)", "").Trim();
 
-                            if (cleanName.Contains("gloves") && !cleanName.Contains("blindfold") && !cleanName.Contains("gag")) glovesPresent = true;
-                            if (cleanName.Contains("blindfold") || cleanName.Contains("gag") || cleanName.Contains("mask") || cleanName.Contains("collar")) maskPresent = true;
-
+                            // STRICT OVERRIDE FOR TRUE PHYSICAL EQUIPMENT DETECTIONS
                             int matchedCategory = -1;
                             foreach (var pair in localMappingTable)
                             {
-                                if (cleanName.Contains(pair.Key)) { matchedCategory = pair.Value; break; }
+                                if (cleanName == pair.Key) // FIXED: Strictly matching exact database names instead of Contains
+                                {
+                                    matchedCategory = pair.Value;
+                                    break;
+                                }
                             }
+
+                            // Dynamic flag mapping triggers matching underlying categories
+                            if (matchedCategory == (int)CustomSlotType.Wrists) glovesPresent = true;
+                            if (matchedCategory == (int)CustomSlotType.Hats || matchedCategory == (int)CustomSlotType.Eyes || matchedCategory == (int)CustomSlotType.Mouth || matchedCategory == (int)CustomSlotType.Neck) maskPresent = true;
 
                             if (matchedCategory > 100)
                             {
@@ -115,7 +121,8 @@ namespace LingerieButtonsFilter
                                         if (t == null) continue;
                                         string storageNameLower = t.gameObject.name.ToLower().Replace("(clone)", "").Trim();
                                         string oldItemNameLower = oldItemName.ToLower().Replace("(clone)", "").Trim();
-                                        if (oldItemNameLower.Contains(storageNameLower) || storageNameLower.Contains(oldItemNameLower))
+
+                                        if (oldItemNameLower == storageNameLower) // FIXED: Restricting to direct string equals checks
                                         {
                                             itemToClickTakeOff = t.GetComponent<Item>();
                                             break;
@@ -126,7 +133,7 @@ namespace LingerieButtonsFilter
                             }
                         }
 
-                        // ОБНОВЛЯЕМ ЖИВЫЕ ССЫЛКИ НА ПРЕДМЕТЫ ПРИ ЛЮБОМ СЛУЧАЕ
+                        // CAPTURING LIVE RUNTIME REFERENCES FOR RE-EQUIP PROCEDURES
                         foreach (Transform t in originalItemsBackup)
                         {
                             if (t == null) continue;
@@ -135,11 +142,15 @@ namespace LingerieButtonsFilter
 
                             string sName = t.name.ToLower().Replace("(clone)", "").Trim();
 
-                            if (glovesPresent && sName.Contains("gloves") && !sName.Contains("blindfold") && !sName.Contains("gag")) lastActiveGlovesItem = itemComponent;
-                            if (maskPresent && (sName.Contains("blindfold") || sName.Contains("gag") || sName.Contains("mask") || sName.Contains("collar"))) lastActiveMaskItem = itemComponent;
+                            // Extract precise mapping lookup to cross-match active equipped tracking
+                            if (localMappingTable.TryGetValue(sName, out int runtimeSlotId))
+                            {
+                                if (glovesPresent && runtimeSlotId == (int)CustomSlotType.Wrists) lastActiveGlovesItem = itemComponent;
+                                if (maskPresent && (runtimeSlotId == (int)CustomSlotType.Hats || runtimeSlotId == (int)CustomSlotType.Eyes || runtimeSlotId == (int)CustomSlotType.Mouth || runtimeSlotId == (int)CustomSlotType.Neck)) lastActiveMaskItem = itemComponent;
+                            }
                         }
 
-                        // ОНЛАЙН-РЕСТАВРАТОР ВНУТРИ ИНТЕРФЕЙСА
+                        // RUNTIME INTERFACE AUTO-RESTORATION PIPELINE
                         if (maskPresent && !glovesPresent && lastActiveGlovesItem != null)
                         {
                             Transform restored = Utility.Instantiate(lastActiveGlovesItem.transform);
@@ -165,7 +176,7 @@ namespace LingerieButtonsFilter
                         }
                     }
 
-                    // ДВУХЭТАПНАЯ ФИЛЬТРАЦИЯ UI
+                    // TWO-STAGE UI COLLECTION FILTERING PASS
                     foreach (Transform itemTransform in originalItemsBackup)
                     {
                         if (itemTransform == null) continue;
@@ -183,21 +194,30 @@ namespace LingerieButtonsFilter
 
                             int uiCategory = -1;
                             bool foundInMap = false;
-                            foreach (var pair in localMappingTable)
+
+                            // FIXED: Strict dictionary lookup replaces slow and unsafe loop Contains operations
+                            if (localMappingTable.TryGetValue(itemNameLower, out int foundSlotId))
                             {
-                                if (itemNameLower.Contains(pair.Key)) { uiCategory = pair.Value; foundInMap = true; break; }
+                                uiCategory = foundSlotId;
+                                foundInMap = true;
                             }
 
                             if (foundInMap) slotTypeInt = uiCategory;
                             else if (!isStandard) slotTypeInt = 100;
 
-                            if (MainPlugin.FilterMode == 1)
+                            if (MainPlugin.FilterMode == 1) // MASKS
                             {
-                                if ((slotTypeInt >= 101 && slotTypeInt <= 104) || slotTypeInt == 7) filteredItems.Add(itemTransform);
+                                if ((slotTypeInt >= 101 && slotTypeInt <= 104) || slotTypeInt == 7)
+                                {
+                                    filteredItems.Add(itemTransform);
+                                }
                             }
-                            else if (MainPlugin.FilterMode == 2)
+                            else if (MainPlugin.FilterMode == 2) // OTHER
                             {
-                                if (slotTypeInt == 100 || (slotTypeInt >= 111 && slotTypeInt <= 113)) filteredItems.Add(itemTransform);
+                                if (slotTypeInt == 100 || (slotTypeInt >= 111 && slotTypeInt <= 113))
+                                {
+                                    filteredItems.Add(itemTransform);
+                                }
                             }
                         }
                     }
@@ -206,100 +226,9 @@ namespace LingerieButtonsFilter
                     gameItemsList.AddRange(filteredItems);
                 }
             }
-            catch (Exception ex) { Debug.LogError($"[SWPT Filter] Ошибка монолитного патча: {ex.Message}"); }
-        }
-
-        [HarmonyPostfix]
-        public static void Postfix(object __instance, ref bool __result)
-        {
-            if (!__result && originalItemsBackup != null) { RestoreImmediately(); return; }
-            try
-            {
-                Type iteratorType = __instance.GetType();
-                FieldInfo stateField = iteratorType.GetField("<>1__state", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (stateField != null && (int)stateField.GetValue(__instance) == -1) RestoreImmediately();
-            }
-            catch { }
-        }
-
-        private static void RestoreImmediately()
-        {
-            if (originalItemsBackup != null && Global.code?.playerLingerieStorage?.items?.items != null)
-            {
-                List<Transform> gameItemsList = Global.code.playerLingerieStorage.items.items;
-                gameItemsList.Clear(); gameItemsList.AddRange(originalItemsBackup); originalItemsBackup = null;
-            }
-        }
-    }
-
-    // ====================================================================
-    // СВЕРХ-ЦЕМЕНТ: НАМЕРТВО СВЯЗЫВАЕТ МАСКИ И ПЕРЧАТКИ В ОТКРЫТОМ МИРЕ
-    // Полностью игнорирует зачистку игры и гарантирует их 100% сожительство!
-    // ====================================================================
-    [HarmonyPatch(typeof(UIInventory), "RefreshEquipment")]
-    public class UIInventory_GlobalCement_Patch
-    {
-        [HarmonyPostfix]
-        public static void Postfix()
-        {
-            try
-            {
-                CharacterCustomization cc = GameObject.FindObjectOfType<CharacterCustomization>();
-                if (cc == null) return;
-
-                // 1. ПРИНУДИТЕЛЬНАЯ ОЧИСТКА КРЮЧКОВ МИСК ПЕРЕД СПАВНОМ (Защита от дублирования полигонов)
-                foreach (Transform child in cc.GetComponentsInChildren<Transform>(true))
-                {
-                    if (child == null) continue;
-                    if (child.parent != null)
-                    {
-                        string parentName = child.parent.name.ToLower();
-                        // Если на крючке misc1 или misc2 висит старый клон — гасим и сжигаем его!
-                        if (parentName == "misc1" || parentName == "misc2")
-                        {
-                            child.gameObject.SetActive(false);
-                            GameObject.Destroy(child.gameObject);
-                        }
-                    }
-                }
-
-                // 2. СВЕРХ-ЦЕМЕНТ: Если в памяти плагина зафиксированы выбранные перчатки — принудительно шьем на misc1!
-                if (InventoryFilterPatch.lastActiveGlovesItem != null)
-                {
-                    Transform restoredGloves = Utility.Instantiate(InventoryFilterPatch.lastActiveGlovesItem.transform);
-                    cc.AddItem(restoredGloves, "misc1");
-                }
-
-                // 3. СВЕРХ-ЦЕМЕНТ: Если в памяти плагина зафиксирована выбранная маска — принудительно шьем на misc2!
-                if (InventoryFilterPatch.lastActiveMaskItem != null)
-                {
-                    Transform restoredMask = Utility.Instantiate(InventoryFilterPatch.lastActiveMaskItem.transform);
-                    cc.AddItem(restoredMask, "misc2");
-                }
-
-                // 4. КОНТРОЛЬНЫЙ СЪЕМ ПОКАЗАНИЙ ДЛЯ ИДЕАЛЬНОГО СНА СТАРШЕГО ИНЖЕНЕРА 🛰️💤
-                string finalMisc1Name = "[Пусто]";
-                string finalMisc2Name = "[Пусто]";
-
-                foreach (Transform child in cc.GetComponentsInChildren<Transform>(true))
-                {
-                    if (child == null || !child.gameObject.activeSelf) continue;
-                    if (child.parent != null)
-                    {
-                        if (child.parent.name.ToLower() == "misc1") finalMisc1Name = child.name;
-                        if (child.parent.name.ToLower() == "misc2") finalMisc2Name = child.name;
-                    }
-                }
-
-                Debug.Log("====================================================================");
-                Debug.Log("[SWPT СВЕРХ-ЦЕМЕНТ]: Железная фиксация вешалок куклы в рантайме мира:");
-                Debug.Log($"   -> Крючок МISC1 (Резерв Перчаток): {finalMisc1Name}");
-                Debug.Log($"   -> Крючок МISC2 (Резерв Масок):    {finalMisc2Name}");
-                Debug.Log("====================================================================");
-            }
             catch (Exception ex)
             {
-                Debug.LogError($"[SWPT СВЕРХ-ЦЕМЕНТ КРИТ]: Ошибка фиксации вешалок: {ex.Message}");
+                Debug.LogError($"[AdvancedWardrobe] Monolithic patch execution exception: {ex.Message}");
             }
         }
     }
